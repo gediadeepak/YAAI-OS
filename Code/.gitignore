@@ -1,0 +1,44 @@
+# Generated builds, test runs, screenshots and EFI staging
+/build/
+/esp/
+
+# Compiler and linker outputs
+*.obj
+*.o
+*.efi
+*.pdb
+*.ilk
+*.map
+
+# Virtual disks, VM state and mutable firmware variables
+*.vdi
+*.vhd
+*.vhdx
+*.vmdk
+*.qcow
+*.qcow2
+*.img
+*.iso
+*.fd
+*.nvram
+*.vbox
+*.vbox-prev
+*.sav
+
+# Local IDE state; shared VS Code configuration remains trackable
+.vs/
+*.suo
+*.user
+*.VC.db
+*.VC.opendb
+
+# Temporary files and operating-system metadata
+*.log
+*.tmp
+*.swp
+*~
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Keep source assets, fonts, audio and license files in version control.

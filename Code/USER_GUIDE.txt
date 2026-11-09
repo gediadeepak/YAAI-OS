@@ -1,0 +1,187 @@
+YAAI OS - desktop development build
+
+Platform builds
+  The default build remains x86-64 for QEMU/VirtualBox.
+  launch_arm64.ps1 boots the shared desktop on QEMU's ARM64 virt board.
+  ARM64 supports Virtio keyboard/tablet input in the QEMU display and remains
+  a live preview only. Serial keyboard fallback is also available.
+  See ARCHITECTURE.txt for platform boundaries, launch steps and limitations.
+
+Desktop
+  F1: Terminal. F2: System overview. F3: Devices and Sound.
+  Right-click the desktop to select AI human, Midnight or Teal wallpaper,
+  or open Devices and Sound. Wallpaper, volume and time zone save automatically.
+  F3 volume cycles 100/50/mute. In F2, click the country/time-zone row to cycle
+  through the supported regions. The top-left status reports saved/restored,
+  or warns that changes are session-only if saving fails.
+  Drag a title bar to move a window. Drag its bottom-right corner to resize.
+  Minus hides a window; its dock button opens it again. X or Escape closes it.
+  Terminal and System can stay open together. Click a window to focus it.
+  Terminal text is retained when hiding, closing or moving its window.
+
+VirtualBox
+  Use UEFI, Secure Boot off, PS/2 mouse, 512 MiB RAM and 32 MiB video RAM.
+  Attach the latest exported installer VDI as the first hard disk and the
+  installed system VDI as the second. Preserve your installed system disk.
+  Sound: enable ICH AC97 with audio output.
+  Network: NAT, AMD PCnet-FAST III (Am79C973), Cable Connected enabled.
+  Run export_virtualbox.ps1 -InstallerOnly to make a new boot VDI.
+  Full-screen display: use a real guest resolution instead of Scaled Mode.
+  With the VM powered off, configure its EFI resolution, for example:
+    VBoxManage setextradata "SHR.I OS" VBoxInternal2/EfiGraphicsResolution 1920x1080
+  Use the resolution matching your host monitor. The loader also selects the
+  largest supported RGB/BGR mode up to Full HD when firmware starts smaller,
+  preserving a larger firmware-selected mode up to 3840x2160.
+  Display modes are selected at boot. Automatic resizing of the guest when
+  changing the host window size still requires graphics/VM integration drivers.
+
+Persistent settings
+  The first settings backend uses each VM's UEFI nonvolatile variable store.
+  QEMU launchers retain build/YAAI-vars.fd for PC and build/arm64/YAAI-vars.fd
+  for ARM64. Do not delete these if you want to retain your preferences.
+  VirtualBox retains preferences in that VM's NVRAM. Copying only a VDI to
+  a different VM does not transfer these settings. This is a small settings
+  store. Documents use a separate native YAAIFS data disk (see below).
+
+Device support
+  Sound: AC97 stereo chime playback, test sound, 100/50/mute master volume.
+  Network: native PCnet driver, DHCPv4 address configuration, ARP replies
+  and ICMP echo replies. This is an initial IPv4 implementation; TCP,
+  DNS resolution, browsing and applications using sockets are not implemented.
+  The host's Wi-Fi connection is shared as virtual Ethernet through NAT;
+  the guest does not scan or authenticate to wireless access points.
+  Power: a VirtualBox-specific indexed battery interface, identified by
+  the VirtualBox guest PCI device. Reports host battery capacity and power
+  source when available. Other platforms report unavailable. A general
+  ACPI AML interpreter and laptop battery drivers are not implemented.
+  SIM: VirtualBox has no built-in cellular modem in this configuration.
+  USB modem drivers, SIM PIN entry and cellular data are not implemented.
+
+Validation
+  tests/run_tests.ps1 runs memory, clock, mouse, GUI and DHCP parser checks.
+  DHCP acquisition was boot-tested with PCnet under QEMU and VirtualBox NAT.
+  VirtualBox reported the host battery at 96 percent, plugged in, during QA.
+  Network frames with invalid lengths, IPv4/UDP checksums or fragments are
+  rejected. DHCP replies must match the transaction, client MAC and server.
+  Desktop interactions were exercised in QEMU; VirtualBox boot, sound,
+  network and desktop views were checked separately.
+
+
+Repository location
+  Current checkout: G:\Project\YAAI-OS
+  Open PowerShell and run:
+    cd "G:\Project\YAAI-OS\Code"
+    .\build.ps1
+  ARM64 build: .\build.ps1 -Target arm64
+  QEMU launch: .\launch_qemu.ps1
+  VirtualBox export: .\export_virtualbox.ps1
+  Scripts resolve project files relative to their own directory. Builds and
+  exported installer/system images go to Code\build and are ignored by Git.
+  The optional legacy documents export uses the repository's VDI directory.
+
+
+Files and Notes
+  F4 opens Files. Select a document or click New file. Tab switches between
+  filename and document; typing appends text, Backspace removes a character.
+  F6 saves. F7 twice discards unsaved changes. Unsaved files are protected
+  against accidentally switching documents. Terminal: files; cat hello.txt.
+  YAAIFS v1 supports 32 flat text files, each up to 4096 bytes. It uses two
+  checksummed copies per file and writes the commit record after flushing
+  payload data. Folders, deletion and general FAT access are not implemented.
+  Only a valid YAAIFS-owned disk is writable; other disks are never formatted.
+  Fresh PC installs save files in the system disk data partition. No extra
+  documents VDI is needed. ARM64 live previews retain a separate data image.
+  For older installations or ARM64 live previews only, a separate disk can
+  still be attached. Shut down the VM, then run:
+    .\attach_documents.ps1 -VMName 'SHR.I OS'
+  This attaches VDI\YAAI-documents.vdi without replacing existing disks.
+  Keep this data disk when updating the boot image. File data survives reboot
+  and is separate from per-VM UEFI preferences.
+
+VirtualBox pointer
+  The PC backend supports PS/2 mouse buttons and native VMMDev absolute
+  coordinates. Keep Pointing Device = PS/2 Mouse. The driver announces
+  absolute pointing support to VirtualBox and draws its own software cursor.
+  Other PC emulators retain relative PS/2 input; ARM64 uses Virtio input.
+
+Clean desktop and About
+  The wallpaper is free of OS text and desktop shortcuts. Apps remain in the
+  compact dock. Click the Y icon, then About YAAI OS (or press F5) for the OS
+  name, tagline, version, platform and preferences status. About is a normal
+  movable/resizable window with Close, Minimize and Escape support.
+
+
+One system disk (new PC installations)
+  The installer creates a FAT32 EFI boot partition and a native YAAIFS data
+  partition on the same disk. Keep the installer attached only for setup or
+  development updates; the installed disk boots by itself. No documents VDI
+  is required for new installations. Old FAT32 data partitions are preserved
+  and are not converted. Use a fresh blank target for this layout.
+  Existing standalone YAAIFS document disks remain supported as a fallback.
+  A valid native system data partition takes priority. Files on an older
+  standalone disk are preserved, but are not migrated automatically.
+  The filesystem still supports 32 files of up to 4 KiB each; a larger data
+  partition does not yet increase these limits. GPT ownership, boundaries,
+  overlaps and checksums are validated before exposing writable storage.
+
+Safe power controls
+  Open the Y menu and select Restart or Shut down. Keyboard alternative:
+  F10 opens the menu, R selects restart, S selects shutdown; Enter confirms.
+  Escape or Cancel returns to the desktop. Confirmation saves a dirty note,
+  flushes the mounted data volume, then calls UEFI ResetSystem. Save or flush
+  errors leave the session running so you can correct the problem. Settings
+  are written synchronously when changed. This cannot protect against the
+  host forcibly powering off the VM or failing storage hardware.
+  ARM64 QEMU supports the same power controls and native partition reader;
+  its boot environment remains a live preview, not a phone installer.
+
+Text editing in Files and Notes
+  Click text to place the caret; drag to select. Arrow keys move the caret,
+  Shift+arrows/Home/End/PageUp/PageDown extend selection. Home/End move within
+  a visual line. Delete removes forward; Backspace removes backward.
+  Ctrl+A selects all; Ctrl+C/X/V copy/cut/paste within YAAI. The clipboard is
+  shared across documents during the running session, not with the host OS.
+  Ctrl+Z undoes and Ctrl+Y redoes up to 16 recent edits. New edits after Undo
+  replace the redo branch. Reopening the window preserves the editing state.
+  PageUp/PageDown move through longer documents. Click the right scroll track
+  to browse without moving the caret. Typing or keyboard navigation brings
+  the caret back into view. Mouse-wheel scrolling is not implemented yet.
+  Ctrl+S or F6 saves; the filename asterisk and footer show unsaved changes.
+  Oversized paste is rejected in full. Existing 4 KiB document limits remain.
+  Tab switches filename/text. Filename editing remains append/backspace.
+
+Files and folders (YAAIFS v2)
+  New installations support 64 entries (files and folders combined), each
+  document up to 64 KiB. Click a folder in the sidebar to enter it; Up returns
+  to its parent. The breadcrumb shows the current path. File sizes and volume
+  usage are displayed. Larger partition capacity does not increase the fixed
+  entry count or per-document limit yet. Supported names remain ASCII.
+  Folder / F9 creates a folder. More / F8 opens Rename, Move, Trash, Restore
+  and Delete forever. Move accepts an absolute destination folder path such
+  as /projects, or / for root. Ctrl+A replaces the prompt text. Enter confirms;
+  Escape cancels. Save/discard an edited note before file operations.
+  Trash retains original parent IDs. Restore checks for name collisions and
+  requires the original parent to be available. Deleted folders retain their
+  contents in Trash. Delete forever requires typing DELETE and refuses any
+  folder that still has children. Trash previews are read-only.
+  Buttons use native vector icons plus short labels on PC and ARM64.
+  Existing v1 volumes remain readable and writable. Creating the first folder
+  or saving more than 4 KiB upgrades an adequately sized owned volume by
+  copying records into an extension after sector 1024, then publishing two
+  checksummed roots. Original legacy sectors are retained as a recovery copy;
+  they are not kept in sync. Use the latest OS build after upgrading.
+  Upgrades need at least 17538 sectors of declared owned storage (about
+  8.6 MiB). Small legacy 1 MiB preview disks are preserved at their old limits;
+  they are not silently resized. New standalone images are 16 MiB. New PC
+  installations already use v2 on the system disk, with no separate data VDI.
+  Recommended VM RAM remains 512 MiB; the expanded image requires at least
+  128 MiB in the current UEFI environment. Validation runs at 128/512 MiB.
+
+VirtualBox power and repeat-setup fix
+  VirtualBox shutdown uses the native VMMDev power-off request after saving
+  the editor and flushing storage. Other platforms retain UEFI ResetSystem.
+  The installer recursively connects block devices before searching for
+  installed setup records. This ensures a secondary system disk's EFI volume
+  is visible even when firmware initially connected only the installer disk.
+  A valid installation bypasses the wizard; do not reinstall an existing disk.
+

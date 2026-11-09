@@ -1,0 +1,8 @@
+# Local chat attachments and workspace state
+/.codex-remote-attachments/
+/.codex/
+
+# Exported virtual-machine disks
+/VDI/
+
+# Project-specific generated files are excluded by Code/.gitignore.

@@ -1,0 +1,171 @@
+YAAI OS platform architecture - first working separation
+
+The platform implementation is selected at build time, then the shared C code
+is compiled for that processor. This is not runtime swapping of incompatible
+machine code. No Linux or Windows kernel is linked into either target.
+
+Shared code
+  kernel.c: startup flow and framebuffer drawing primitives
+  desktop.c, gui.c, console.c: desktop, windows, rendering and terminal display
+  shell.c: command handling
+  memory.c: physical page allocation over the loader's memory map
+  clock.c: date validation, time zone rules and formatting
+  display_mode.c: shared UEFI GOP mode selection before framebuffer allocation;
+  prefers real supported modes up to Full HD and retains larger firmware modes.
+  setup.c, runtime.c: settings format/checksums and freestanding C helpers
+  assets/: wallpaper and font assets, used by both targets
+  storage.c: bounded record-store interface, two alternating checksummed
+  generations, readback verification and unchanged-write suppression.
+  settings.c: shared validated wallpaper, volume and time-zone preferences.
+  input_events.c: portable key, button and relative/absolute pointer decoding,
+  with bounded queues that preserve click transitions and coordinate limits.
+
+Platform contract
+  platform/platform.h: serial output, exception setup, interrupt masking,
+  halt/idle, frame timer, UTC clock, keyboard/pointer events, audio, network
+  and power reporting. Unsupported services report unavailable explicitly.
+  platform/compat.c bridges the existing renderer's serial/frame APIs.
+  platform/uefi_hooks.h handles backend-specific allocations before firmware
+  shutdown, separately from interfaces used by the running desktop.
+  platform/uefi_store.c supplies the first record-store backend using UEFI
+  GetVariable/SetVariable runtime services after ExitBootServices. It uses
+  a dedicated vendor GUID and two small variables, not boot/security settings.
+  Runtime firmware regions remain reserved and identity mapped, as required
+  by the current boot environment. A future virtual-memory implementation
+  must preserve the runtime mappings or establish SetVirtualAddressMap first.
+  This backend is for small preferences only. It is not a filesystem or a
+  disk driver; those will be separate portable storage work.
+
+PC backend
+  platform/x86_64/hal.c: PC services and existing driver adapters
+  platform/x86_64/rtc.c: CMOS snapshot/decode
+  Existing driver files remain at the source root for now: exceptions.c/S,
+  keyboard.c, ps2.c, mouse.c, audio.c, devices.c and network.c.
+  Drivers are selected only for the x86-64 build. The PCnet driver and IPv4
+  protocol processing still share network.c; separating those is future work.
+  The PC build retains its installer, persistent setup, sound, networking,
+  VirtualBox power reporting and PS/2 input.
+
+ARM64 backend
+  platform/aarch64/hal.c: QEMU virt board, PL011 UART, PL031 RTC, generic timer,
+  serial keyboard fallback and explicit unavailable device services.
+  platform/aarch64/virtio_input.c: polled Virtio-MMIO v2 keyboard/tablet
+  transport with event/status queues, feature negotiation and DMA barriers.
+  platform/aarch64/vectors.S: initial EL1/EL2 exception vectors and diagnostics.
+  Ctrl-T/Ctrl-Y/Ctrl-D in the serial terminal open Terminal/System/Devices.
+  The QEMU window now accepts normal keyboard and absolute pointer input.
+  Audio, network, battery and physical touchscreen drivers are not implemented
+  for ARM64. Standard US keys, Shift/Caps Lock, F1/F2/F3 and mouse buttons are
+  supported; keyboard LED feedback and international layouts are future work.
+  This is an ARM64 QEMU virt live preview, not a Samsung installation image.
+
+Boot and memory
+  boot.c is a shared 64-bit UEFI loader; it supplies the framebuffer, protected
+  canvases and UEFI descriptor memory map to the same kernel entry point.
+  Both current backends use UEFI's identity-addressable memory environment and
+  keep firmware/loader allocations reserved. New page tables, virtual memory,
+  scheduling, multiprocessing and a generic non-UEFI boot map are future work.
+  ARM64 skips the PC installer and boots a live session. A Samsung port will
+  need a different boot adapter and Exynos-specific board/device support.
+
+Build
+  .\build.ps1                  -> build\BOOTX64.EFI
+  .\build.ps1 -Target arm64     -> build\arm64\BOOTAA64.EFI
+  .\launch_qemu.ps1            -> PC desktop
+  .\launch_arm64.ps1           -> ARM64 desktop plus serial console
+  .\launch_arm64.ps1 -Headless -> serial console only
+
+Click the ARM64 QEMU display and use the keyboard and pointer normally.
+F1/F2/F3 open Terminal/System/Devices; right-click opens the wallpaper menu.
+The launcher's PowerShell terminal also supplies serial fallback input.
+Ctrl-A then C switches the serial terminal to the QEMU monitor;
+type quit there to stop the VM. The launcher preserves its serial log.
+
+Validation
+  .\tests\run_tests.ps1: PC memory, clock, mouse, GUI and network tests,
+  tested at 64 MiB and 512 MiB.
+  .\tests\run_arm64_tests.ps1: the same memory, clock and GUI tests compiled
+  for ARM64, plus input decoder edge cases, a real PL031 clock read and
+  Virtio keyboard/tablet initialization, at 128 MiB and 512 MiB. The bundled
+  ARM UEFI firmware requires at least 128 MiB before the OS starts.
+  ARM64 desktop boot, native keyboard typing, pointer movement, wallpaper
+  switching, window dragging/resizing and serial fallback are checked separately.
+  Both suites also test settings validation, CRC corruption, alternating-record
+  recovery, truncated writes, unavailable stores and unchanged-write suppression
+  using an isolated in-memory backend. Actual PC and ARM64 firmware stores were
+  tested separately by changing three preferences, powering off QEMU and starting
+  a new process against the same variables file; all three preferences restored.
+  Display mode tests cover Full HD selection, firmware-selected higher modes,
+  unsupported formats, invalid strides, short query responses and SetMode failure.
+
+Native document storage
+  block.h defines synchronous 512-byte sector reads/writes/flush. PC uses
+  legacy ATA PIO; ARM64 QEMU virt uses Virtio-MMIO block with FLUSH support.
+  files.c validates YAAIFS ownership and CRC before writes; refuses ambiguous
+  multiple owned volumes. Two alternating generations per file preserve the
+  last committed content if a save is interrupted. file_app.c is shared UI.
+  Initial limits: 32 files, 4 KiB each, ASCII flat names, no deletion/folders.
+  The root image is created explicitly by create_documents.ps1; the OS never
+  formats an unidentified disk. Tests exercise corruption and interrupted IO.
+
+VirtualBox pointer integration
+  platform/x86_64/vbox_pointer.c probes PCI 80ee:cafe and its IO BAR only.
+  Requests use an allocator-owned page below 4 GiB and synchronous VMMDev
+  Get/SetMouseStatus. Shared pointer events combine absolute coordinates
+  with PS/2 button events. A failed handshake falls back to relative input.
+  Protocol reference: https://github.com/VirtualBox/virtualbox/blob/main/include/VBox/VMMDev.h
+
+Single disk layout and safe power
+  volumes.c validates primary GPT header/entry CRCs, supported 128x128 entry
+  layout, LBAs, unique IDs and all partition overlaps. A private YAAIFS type
+  GUID identifies owned storage. VolumeSlice bounds all IO to that partition.
+  install_disk.c formats it only after existing blank/pending target checks
+  and explicit INSTALL confirmation. FAT EFI boot remains unchanged.
+  Shared files_initialize prefers one owned native partition; standalone
+  legacy document volumes remain a fallback. Existing FAT data is untouched.
+  power.c validates the firmware runtime table, flushes the mounted filesystem
+  and invokes ResetSystem (cold reset or shutdown). The desktop confirmation
+  saves pending editor content first and prevents power actions on IO errors.
+  The same shared code builds for x86-64 and ARM64; reset uses UEFI ABI.
+  Tests cover slice bounds, corrupt GPT, overlaps, readonly media, and failure
+  to flush preventing ResetSystem. Actual QEMU tests cover installer layout,
+  standalone installed boot, autosave/restart, reopened data and shutdown.
+
+Shared text editor
+  editor.c/h provides bounded insertion/replacement, caret and selection,
+  visual-line navigation, a session clipboard and 17 document snapshots
+  (16 undo steps). It has no hardware or renderer dependencies. file_app.c
+  paints selections/caret, translates mouse hit positions and owns the saved
+  baseline for dirty tracking. Clipboard persists across document resets;
+  undo history stays in memory only and resets when another file is loaded.
+  edit_keys.h reserves byte codes above ASCII for navigation and shortcuts.
+  PS/2 and Virtio input decoders encode the same commands, with Shift and
+  left/right Control tracking. Consumers cast char to unsigned for commands.
+  Tests exercise editing, selection/clipboard across documents, history
+  boundaries, redo invalidation, layout navigation and atomic size limits.
+
+YAAIFS v2
+  64 stable slot IDs with two 129-sector banks per slot, 64 KiB maximum payload.
+  Two root sectors contain the same versioned geometry and CRC. Record fields
+  retain the v1 name/generation/data/header CRC offsets and add flags at 60 and
+  parent ID at 64. Folder rename/move is one atomic metadata commit; descendants
+  reference parent IDs. Tombstones commit deletion before a slot can be reused.
+  Trashed roots retain their parent ID and descendants; restore checks ancestors
+  and collisions. Purging nonempty directories is refused, including hidden
+  trashed descendants. All data/metadata writes retain alternating bank recovery.
+  v1 migration copies to LBA1024+ without changing original sectors. It commits
+  redundant extension roots last, mounts whichever valid root survived, and
+  never overwrites beyond the legacy root's declared owned capacity. Damaged
+  unpublished roots expose the original legacy copy read-only for recovery.
+  The ATA backend uses elapsed UTC seconds for bounded waits (5 s commands,
+  30 s flush), with a finite polling fallback if RTC access fails. This avoids
+  treating host fsync delays as immediate IO failures due to CPU loop speed.
+
+VirtualBox power/discovery regression
+  VMMDev SetPowerStatus request 30, size 28, state 2 requests host power-off.
+  It reuses the already initialized, PCI-gated low-memory VMMDev request page.
+  This path executes only after files_sync succeeds; UEFI remains fallback.
+  BootServices ConnectController is typed at offset 264. installed_settings
+  connects all BlockIO handles recursively before locating filesystem handles.
+  A disk copy from the affected VM was independently verified; cold boot and
+  restart bypassed setup and guest shutdown reached VirtualBox Powered Off.
