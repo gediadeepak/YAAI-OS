@@ -61,13 +61,13 @@ A power loss during that one-time replacement may require booting installer medi
 again; retain the powered-off VDI backup. This is a prototype recovery mechanism,
 not a guarantee against every firmware, filesystem or physical-storage failure.
 
-Settings changes are on `codex/settings-app`; window-control changes are on `codex/window-controls`; the installer/app milestones are on `codex/single-disk-app-framework`.
+The file-manager split is on `codex/file-manager`; Settings changes are on `codex/settings-app`; window-control changes are on `codex/window-controls`; the installer/app milestones are on `codex/single-disk-app-framework`.
 Use Git revert on the feature commit to undo a change while keeping history.
 Git does not back up ignored VDIs or documents stored inside them.
 
 ## Desktop applications
 
-Files & Notes, Calculator and Settings use a shared application registry, lifecycle callbacks,
+Files, Notes, Calculator and Settings use a shared application registry, lifecycle callbacks,
 window manager and filesystem service table. Apps retain their state while
 minimized. Unsaved notes veto close until saved or explicitly discarded.
 
@@ -79,6 +79,39 @@ These are cooperative built-in apps in the kernel address space. There is no
 process isolation or external executable loader yet. The same app code builds for
 x86-64 PC/UEFI and the ARM64 QEMU virt preview. The installed-disk updater currently
 targets x86-64; this does not enable installation on arbitrary phones.
+
+## Files and Notes
+
+**F4** opens Files and **F12** opens Notes. Both have independent dock icons,
+window controls and minimized state. The document filesystem format is unchanged.
+
+Files lists folders first, then files by name, with icons and byte sizes.
+Breadcrumb buttons and Up navigate folders without disturbing an unsaved note.
+Double-click an item, or select it and press Enter, to open it. Plain ASCII text
+opens in Notes; binary files are rejected. Notes is currently single-document.
+
+Right-click in Files for Open, Rename, Move to folder, Move to Trash, New folder
+and New note. Move accepts a folder path, with / meaning Home. Trash offers
+Restore and Delete permanently; permanent removal requires typing DELETE.
+Nonempty folders cannot be permanently removed until their contents are handled.
+
+An open note and its parent folders cannot be renamed, moved or trashed from
+Files until the note is closed. Notes keeps its close/save/discard protection,
+undo/redo, selection and internal clipboard. Ctrl+S/F6 saves; F7 twice discards.
+Changing the Notes filename saves a new copy and refuses to overwrite another
+existing file. Files refreshes automatically after a Notes save; Refresh rereads
+changes made elsewhere.
+
+The footer distinguishes document payload capacity, free entry slots and total
+data-volume size. YAAIFS v2 still has a combined 64-file/folder limit and a 64 KiB
+per-file limit; free payload capacity is a filesystem quota, not all unused disk
+space. New folders and text files use the existing disk and need no extra VDI.
+
+Keyboard in Files: arrows select, Enter opens, N creates a folder, F creates a
+note, R renames (or restores in Trash), M moves, T trashes, P permanently deletes
+in Trash, U refreshes. Escape cancels a dialog or context menu before closing
+the window. In a filename/path dialog, Ctrl+A selects the existing value.
+
 
 ## Settings
 
@@ -127,6 +160,6 @@ size. Snapped windows reserve clock and dock space. Maximized windows fill the e
 ```
 
 The VM suites cover memory, input, graphics, storage, documents, app lifecycle,
-Calculator, saved Settings/resolution fallback and boot-update fault injection at 128 MiB and 512 MiB. The independent
+Calculator, independent Files/Notes workflows, saved Settings/resolution fallback and boot-update fault injection at 128 MiB and 512 MiB. The independent
 raw-disk verifier compares the complete documents partition, setup settings, GPT,
 boot records and retained original executable.

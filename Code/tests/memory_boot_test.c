@@ -16,6 +16,7 @@ int volumes_test(void);
 int editor_test(void);
 int folders_test(void);
 int apps_test(void);
+int browser_test(void);
 int boot_update_test(void);
 
 // Test-only entry, linked into a separate EFI image with isa-debug-exit in QEMU.
@@ -69,7 +70,7 @@ _Noreturn void memory_probe_main(const BootInfo *boot)
         else { console_write("DISPLAY MODE TEST FAILED AT LINE "); console_decimal((uint64_t)result); console_write("\n"); }
     }
     if (!result) {
-        result = files_test(); if (!result) result = volumes_test(); if (!result) result = editor_test(); if (!result) result = folders_test(); if (!result) result = apps_test(); if (!result) result = boot_update_test();
+        result = files_test(); if (!result) result = volumes_test(); if (!result) result = editor_test(); if (!result) result = folders_test(); if (!result) result = apps_test(); if (!result) result = browser_test(); if (!result) result = boot_update_test();
         if (!result) console_write("FILESYSTEM TESTS PASSED\n");
         else { console_write("FILESYSTEM TEST FAILED AT LINE "); console_decimal((uint64_t)result); console_write("\n"); }
     }

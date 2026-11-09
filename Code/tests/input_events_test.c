@@ -17,6 +17,7 @@ int input_events_test(void)
     key(42,0); key(59,1); key(60,1); key(61,1);
     CHECK(input_events_key_read() == 1 && input_events_key_read() == 2 && input_events_key_read() == 3);
     key(68,1); CHECK(input_events_key_read() == 17);
+    key(88,1); CHECK(input_events_key_read() == 30);
     key(62,1); key(64,1); key(65,1); key(15,1);
     CHECK(input_events_key_read() == 4 && input_events_key_read() == 6 && input_events_key_read() == 7 && input_events_key_read() == '\t');
     key(28,1); key(14,1); key(1,1); key(96,1);
