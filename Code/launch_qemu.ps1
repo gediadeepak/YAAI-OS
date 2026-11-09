@@ -1,7 +1,9 @@
+param([switch]$Installer)
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 & "$PSScriptRoot\build.ps1"
 $qemuShare = 'C:\Program Files\qemu\share'
+$useInstaller = [bool]$Installer
 $systemDisk = Join-Path $PSScriptRoot 'build\YAAI-system.qcow2'
 $legacySystemDisk = Join-Path $PSScriptRoot 'build\SHR.I-system.qcow2'
 if (-not (Test-Path -LiteralPath $systemDisk) -and (Test-Path -LiteralPath $legacySystemDisk)) {
@@ -10,6 +12,7 @@ if (-not (Test-Path -LiteralPath $systemDisk) -and (Test-Path -LiteralPath $lega
 if (-not (Test-Path -LiteralPath $systemDisk)) {
   & 'C:\Program Files\qemu\qemu-img.exe' create -f qcow2 $systemDisk 1G
   if ($LASTEXITCODE -ne 0) { throw 'Cannot create the installation disk.' }
+  $useInstaller = $true
 }
 $documents = Join-Path $PSScriptRoot 'build\YAAI-documents.img'
 $documentsArguments = @()
@@ -27,13 +30,16 @@ try {
   $variables = Join-Path $PSScriptRoot 'build\YAAI-vars.fd'
   if (-not (Test-Path -LiteralPath $variables)) { Copy-Item "$qemuShare\edk2-i386-vars.fd" $variables }
 
+  $installerArguments = @()
+  if ($useInstaller) {
+    $installerArguments = @('-drive',"if=none,id=osdisk,format=raw,snapshot=on,file=fat:$runDirectory\esp",'-device','ide-hd,drive=osdisk,bus=ide.0,bootindex=1')
+  }
   & 'C:\Program Files\qemu\qemu-system-x86_64.exe' -machine q35 -m 512M -rtc base=utc `
     -device piix3-ide,id=storage `
     @documentsArguments `
     -drive "if=pflash,format=raw,readonly=on,file=$qemuShare\edk2-x86_64-code.fd" `
     -drive "if=pflash,format=raw,file=$variables" `
-    -drive "if=none,id=osdisk,format=raw,snapshot=on,file=fat:$runDirectory\esp" `
-    -device ide-hd,drive=osdisk,bus=ide.0,bootindex=1 `
+    @installerArguments `
     -drive "if=none,id=systemdisk,format=qcow2,file=$systemDisk" `
     -device ide-hd,drive=systemdisk,bus=storage.0,bootindex=2 `
     -audiodev dsound,id=bootaudio `

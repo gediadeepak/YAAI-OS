@@ -7,6 +7,7 @@
 #include "platform/platform.h"
 #include "platform/uefi_hooks.h"
 #include "display_mode.h"
+#include "boot_efi.h"
 
 _Static_assert(offsetof(BootServices, exit_boot_services) == 232, "UEFI service layout");
 _Static_assert(offsetof(BootServices, locate_protocol) == 320, "UEFI service layout");
@@ -21,6 +22,7 @@ uint64_t efi_main(void *image_handle, SystemTable *system)
     static BootInfo boot;
     boot.runtime_services = system->runtime_services;
     #if !defined(SHRI_TEST_BOOT) && !defined(YAAI_LIVE_BOOT)
+    boot_slots_start(image_handle,system);
     uint64_t setup_status = installer_run(image_handle, system, &boot.setup);
     if (setup_status != 0) return setup_status;
     #endif
@@ -125,4 +127,3 @@ uint64_t efi_main(void *image_handle, SystemTable *system)
     platform_disable_interrupts();
     platform_halt();
 }
-

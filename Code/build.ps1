@@ -9,13 +9,14 @@ if (-not (Test-Path 'assets\ui-fonts.bin') -or -not (Test-Path 'assets\wallpaper
 }
 $compilerFlags = @('-std=c11','-O2','-Wall','-Wextra','-Werror','-ffreestanding','-fno-builtin','-fno-stack-protector','-mno-stack-arg-probe','-I.')
 $sources = [ordered]@{}
-foreach ($source in @('boot','kernel','console','shell','memory','runtime','setup','clock','desktop','gui','input_events','storage','settings','display_mode','files','file_app','volumes','power','editor','window_manager','apps','notes_app','calculator','calculator_app')) { $sources[$source] = "$source.c" }
+foreach ($source in @('boot','kernel','console','shell','memory','runtime','setup','clock','desktop','gui','input_events','storage','settings','display_mode','files','file_app','volumes','power','editor','window_manager','apps','notes_app','calculator','calculator_app','boot_update')) { $sources[$source] = "$source.c" }
 $sources['platform_compat'] = 'platform/compat.c'
 $sources['platform_store'] = 'platform/uefi_store.c'
 $assembly = [ordered]@{ gui_assets = 'gui_assets.S' }
 if ($Target -eq 'x86_64') {
   $compilerFlags += @('--target=x86_64-pc-windows-msvc','-mno-red-zone')
   foreach ($source in @('audio','exceptions','keyboard','installer','install_disk','ps2','mouse','devices','network')) { $sources[$source] = "$source.c" }
+  $sources['boot_efi'] = 'boot_efi.c'
   $sources['platform_hal'] = 'platform/x86_64/hal.c'
   $sources['platform_clock'] = 'platform/x86_64/rtc.c'
   $sources['platform_disk'] = 'platform/x86_64/ata_disk.c'
