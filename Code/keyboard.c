@@ -59,6 +59,7 @@ char keyboard_read(void)
     if (code == 0x42) return 18; // F8: Files actions.
     if (code == 0x43) return 19; // F9: New folder.
     if (code == 0x44) return 17; // F10 opens the desktop menu.
+    if (code == 0x57) return 20; // F11 launches Calculator.
     if (code >= sizeof(normal)) return 0;
     char character = normal[code];
     if(controls)return (char)edit_shortcut(character);
@@ -67,4 +68,3 @@ char keyboard_read(void)
     }
     return shifts ? shifted[code] : character;
 }
-

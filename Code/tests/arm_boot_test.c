@@ -12,6 +12,8 @@ int files_test(void);
 int volumes_test(void);
 int editor_test(void);
 int folders_test(void);
+int apps_test(void);
+
 
 _Noreturn void arm_probe_main(const BootInfo *boot)
 {
@@ -37,7 +39,7 @@ _Noreturn void arm_probe_main(const BootInfo *boot)
     }
     if (!result) { result = storage_test(); if (!result) console_write("STORAGE TESTS PASSED\n"); }
     if (!result) { result = display_mode_test(); if (!result) console_write("DISPLAY MODE TESTS PASSED\n"); }
-    if (!result) { result = files_test(); if (!result) result = volumes_test(); if (!result) result = editor_test(); if (!result) result = folders_test(); if (!result) console_write("FILESYSTEM TESTS PASSED\n"); }
+    if (!result) { result = files_test(); if (!result) result = volumes_test(); if (!result) result = editor_test(); if (!result) result = folders_test(); if (!result) result = apps_test(); if (!result) console_write("FILESYSTEM TESTS PASSED\n"); }
     if (!result) console_write("ARM64 TESTS PASSED\n");
     else { console_write("ARM64 TEST FAILED / LINE "); console_decimal((uint64_t)result); console_write("\n"); }
     // Test-only semihosting exit; not linked into the desktop image.
@@ -47,6 +49,3 @@ _Noreturn void arm_probe_main(const BootInfo *boot)
     __asm__ volatile("hlt #0xf000" : "+r"(operation), "+r"(arguments) :: "memory");
     platform_halt();
 }
-
-
-

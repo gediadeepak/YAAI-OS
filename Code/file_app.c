@@ -1,5 +1,8 @@
 #include "file_app.h"
 #include "editor.h"
+#include "apps.h"
+static const AppFiles *fs;
+void file_app_bind(const AppServices *services){fs=services->files;}
 #include "files.h"
 #include "screen.h"
 static FileEntry entries[FILE_COUNT];
@@ -61,15 +64,15 @@ static int equal_name(const char *a, const char *b) {
     return 0;
 }
 static void refresh(void) {
-    FileResult result = files_list_directory(folder, trash_view, entries, FILE_COUNT, &count);
+    FileResult result = fs->list(folder, trash_view, entries, FILE_COUNT, &count);
     if (result != FILE_OK) {
         count = 0;
         message = files_error(result);
     }
-    files_usage(&usage);
+    fs->usage(&usage);
     if (trash_view)
         copy_name(location, "Trash");
-    else if (files_path(folder, location, sizeof(location)) != FILE_OK)
+    else if (fs->path(folder, location, sizeof(location)) != FILE_OK)
         copy_name(location, "/");
 }
 static void open_file_id(unsigned id) {
@@ -78,13 +81,13 @@ static void open_file_id(unsigned id) {
         return;
     }
     FileEntry entry;
-    FileResult result = files_entry(id, &entry);
+    FileResult result = fs->entry(id, &entry);
     if (result != FILE_OK) {
         message = files_error(result);
         return;
     }
     unsigned size = FILE_BYTES;
-    result = files_read_id(id, incoming, &size);
+    result = fs->read_id(id, incoming, &size);
     if (result != FILE_OK) {
         message = files_error(result);
         return;
@@ -107,7 +110,7 @@ void file_app_open(void) {
     editor_reset(&document, "", 0);
     mark_clean();
     unsigned id;
-    if (files_resolve("hello.txt", &id) == FILE_OK)
+    if (fs->resolve("hello.txt", &id) == FILE_OK)
         open_file_id(id);
     else
         for (unsigned i = 0; i < count; ++i)
@@ -127,7 +130,7 @@ static void save(void) {
     }
     FileEntry destination[FILE_COUNT];
     unsigned destination_count = 0;
-    FileResult listed = files_list_directory(editor_parent, 0, destination, FILE_COUNT, &destination_count);
+    FileResult listed = fs->list(editor_parent, 0, destination, FILE_COUNT, &destination_count);
     if (listed != FILE_OK) {
         message = files_error(listed);
         return;
@@ -137,7 +140,7 @@ static void save(void) {
             message = "That name exists; open that document to edit it";
             return;
         }
-    FileResult result = files_write_at(editor_parent, filename, text, length);
+    FileResult result = fs->write_at(editor_parent, filename, text, length);
     message = files_error(result);
     if (result == FILE_OK) {
         mark_clean();
@@ -150,6 +153,12 @@ static void save(void) {
     }
 }
 int file_app_has_changes(void) { return dirty; }
+int file_app_close(void){
+    if(dirty){message="Save or discard your note before closing";return 0;}
+    initialized=dialog=selection_drag=trash_view=trash_context=editor_readonly=0;
+    folder=editor_parent=open_id=selected_id=page=0;original[0]=0;copy_name(filename,"hello.txt");
+    editor_reset(&document,"",0);mark_clean();return 1;
+}
 int file_app_save_pending(void) {
     if (dirty)
         save();
@@ -227,7 +236,7 @@ static void start_dialog(int mode) {
     selection_drag = 0;
     if (mode == 2) {
         FileEntry e;
-        if (files_entry(selected_id, &e) == FILE_OK)
+        if (fs->entry(selected_id, &e) == FILE_OK)
             copy_name(dialog_input, e.name);
     }
     if (mode == 3) {
@@ -239,24 +248,24 @@ static void perform_dialog(void) {
     FileResult r = FILE_INVALID;
     FileEntry e;
     if (dialog == 1)
-        r = files_mkdir(folder, dialog_input);
+        r = fs->mkdir(folder, dialog_input);
     else if (dialog == 2)
-        r = files_rename(selected_id, dialog_input);
+        r = fs->rename(selected_id, dialog_input);
     else if (dialog == 3) {
         unsigned destination;
-        r = files_resolve(dialog_input, &destination);
+        r = fs->resolve(dialog_input, &destination);
         if (r == FILE_OK)
-            r = files_move(selected_id, destination);
+            r = fs->move(selected_id, destination);
     } else if (dialog == 5)
-        r = files_trash(selected_id);
+        r = fs->trash(selected_id);
     else if (dialog == 6)
-        r = files_restore(selected_id);
+        r = fs->restore(selected_id);
     else if (dialog == 7) {
         if (!equal_name(dialog_input, "DELETE")) {
             message = "Type DELETE to permanently remove this item";
             return;
         }
-        r = files_remove(selected_id);
+        r = fs->remove(selected_id);
     }
     if (r != FILE_OK) {
         message = files_error(r);
@@ -269,7 +278,7 @@ static void perform_dialog(void) {
     } else {
         refresh();
         if (open_id == selected_id) {
-            if (files_entry(open_id, &e) == FILE_OK) {
+            if (fs->entry(open_id, &e) == FILE_OK) {
                 copy_name(filename, e.name);
                 copy_name(original, e.name);
                 editor_parent = e.parent;
@@ -626,7 +635,7 @@ void file_app_click(GuiRect window, int px, int py) {
                     FileEntry parent;
                     if (!folder)
                         navigate(0, 0, 0);
-                    else if (files_entry(folder, &parent) == FILE_OK)
+                    else if (fs->entry(folder, &parent) == FILE_OK)
                         navigate((parent.flags & FILE_TRASHED) ? 0 : parent.parent,
                                  (parent.flags & FILE_TRASHED) != 0, trash_context);
                 } else if (i == 1) {

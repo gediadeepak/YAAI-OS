@@ -9,7 +9,7 @@ if (-not (Test-Path 'assets\ui-fonts.bin') -or -not (Test-Path 'assets\wallpaper
 }
 $compilerFlags = @('-std=c11','-O2','-Wall','-Wextra','-Werror','-ffreestanding','-fno-builtin','-fno-stack-protector','-mno-stack-arg-probe','-I.')
 $sources = [ordered]@{}
-foreach ($source in @('boot','kernel','console','shell','memory','runtime','setup','clock','desktop','gui','input_events','storage','settings','display_mode','files','file_app','volumes','power','editor')) { $sources[$source] = "$source.c" }
+foreach ($source in @('boot','kernel','console','shell','memory','runtime','setup','clock','desktop','gui','input_events','storage','settings','display_mode','files','file_app','volumes','power','editor','window_manager','apps','notes_app','calculator','calculator_app')) { $sources[$source] = "$source.c" }
 $sources['platform_compat'] = 'platform/compat.c'
 $sources['platform_store'] = 'platform/uefi_store.c'
 $assembly = [ordered]@{ gui_assets = 'gui_assets.S' }
@@ -49,4 +49,3 @@ foreach ($entry in $assembly.GetEnumerator()) {
 & "$llvmBin\lld-link.exe" /subsystem:efi_application /entry:efi_main /nodefaultlib "/out:$outputDirectory\$efiName" @objects
 if ($LASTEXITCODE -ne 0) { throw "Linking failed for $Target." }
 Write-Output "Built ${Target}: $PSScriptRoot\$outputDirectory\$efiName"
-

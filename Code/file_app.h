@@ -9,4 +9,5 @@ void file_app_key(char key);
 int file_app_has_changes(void);
 int file_app_save_pending(void);
 int file_app_escape(void);
+int file_app_close(void);
 #endif

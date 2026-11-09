@@ -14,6 +14,8 @@ int files_test(void);
 int volumes_test(void);
 int editor_test(void);
 int folders_test(void);
+int apps_test(void);
+
 
 // Test-only entry, linked into a separate EFI image with isa-debug-exit in QEMU.
 _Noreturn void memory_probe_main(const BootInfo *boot)
@@ -66,7 +68,7 @@ _Noreturn void memory_probe_main(const BootInfo *boot)
         else { console_write("DISPLAY MODE TEST FAILED AT LINE "); console_decimal((uint64_t)result); console_write("\n"); }
     }
     if (!result) {
-        result = files_test(); if (!result) result = volumes_test(); if (!result) result = editor_test(); if (!result) result = folders_test();
+        result = files_test(); if (!result) result = volumes_test(); if (!result) result = editor_test(); if (!result) result = folders_test(); if (!result) result = apps_test();
         if (!result) console_write("FILESYSTEM TESTS PASSED\n");
         else { console_write("FILESYSTEM TEST FAILED AT LINE "); console_decimal((uint64_t)result); console_write("\n"); }
     }
@@ -74,6 +76,3 @@ _Noreturn void memory_probe_main(const BootInfo *boot)
     __asm__ volatile("outl %0, %1" : : "a"(exit_code), "Nd"((uint16_t)0xf4));
     for (;;) __asm__ volatile("hlt");
 }
-
-
-

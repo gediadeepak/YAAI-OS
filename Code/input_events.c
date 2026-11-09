@@ -49,7 +49,7 @@ static void character(unsigned code, int32_t value)
     if(code==29||code==97){unsigned mask=code==29?1:2;if(value)controls|=mask;else controls&=~mask;return;}
     if (!value) return;
     char key = code < 58 ? (shifts ? shifted[code] : normal[code]) :
-        code >= 59 && code <= 65 ? (char)(code - 58) : code == 66 ? 18 : code == 67 ? 19 : code == 68 ? 17 : code == 96 ? '\n' : 0;
+        code >= 59 && code <= 65 ? (char)(code - 58) : code == 66 ? 18 : code == 67 ? 19 : code == 68 ? 17 : code == 87 ? 20 : code == 96 ? '\n' : 0;
     if (code < 58 && normal[code] >= 'a' && normal[code] <= 'z')
         key = (!!shifts ^ caps) ? (char)(normal[code] - 'a' + 'A') : normal[code];
     unsigned navigation=code==105?EDIT_LEFT:code==106?EDIT_RIGHT:code==103?EDIT_UP:code==108?EDIT_DOWN:
