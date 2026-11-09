@@ -9,12 +9,12 @@ New-Item -ItemType Directory -Force "$testDirectory\esp\EFI\BOOT" | Out-Null
 & "$llvmBin\clang.exe" --target=x86_64-pc-windows-msvc -std=c11 -Wall -Wextra -Werror -ffreestanding -fno-stack-protector -mno-red-zone -mno-stack-arg-probe -DSHRI_TEST_BOOT -Dkernel_main=memory_probe_main -c boot.c -o "$testDirectory\boot_probe.obj"
 if ($LASTEXITCODE -ne 0) { throw 'Test loader compilation failed.' }
 $testObjects = @("$testDirectory\boot_probe.obj")
-foreach ($source in @('memory_test', 'clock_test', 'mouse_test', 'gui_test', 'network_test', 'input_events_test', 'storage_test', 'display_mode_test', 'files_test','volumes_test','editor_test','folders_test', 'memory_boot_test')) {
+foreach ($source in @('memory_test', 'clock_test', 'mouse_test', 'gui_test', 'network_test', 'input_events_test', 'storage_test', 'display_mode_test', 'files_test','volumes_test','editor_test','folders_test','apps_test','boot_update_test', 'memory_boot_test')) {
   & "$llvmBin\clang.exe" --target=x86_64-pc-windows-msvc -std=c11 -Wall -Wextra -Werror -ffreestanding -fno-stack-protector -mno-red-zone -mno-stack-arg-probe -c "tests\$source.c" -o "$testDirectory\$source.obj"
   if ($LASTEXITCODE -ne 0) { throw "$source compilation failed." }
   $testObjects += "$testDirectory\$source.obj"
 }
-$objects = @('kernel', 'audio', 'chime', 'exception_stubs', 'console', 'exceptions', 'keyboard', 'shell', 'memory', 'runtime', 'setup', 'installer', 'install_disk', 'clock', 'ps2', 'mouse', 'desktop', 'gui', 'gui_assets', 'devices', 'network', 'platform_compat', 'platform_hal', 'platform_clock', 'input_events', 'storage', 'settings', 'platform_store', 'display_mode', 'files', 'platform_disk', 'file_app', 'volumes', 'power', 'editor', 'vbox_pointer') |
+$objects = @('kernel', 'audio', 'chime', 'exception_stubs', 'console', 'exceptions', 'keyboard', 'shell', 'memory', 'runtime', 'setup', 'installer', 'install_disk', 'clock', 'ps2', 'mouse', 'desktop', 'gui', 'gui_assets', 'devices', 'network', 'platform_compat', 'platform_hal', 'platform_clock', 'input_events', 'storage', 'settings', 'platform_store', 'display_mode', 'files', 'platform_disk', 'file_app', 'volumes', 'power', 'editor', 'window_manager', 'apps', 'notes_app', 'calculator', 'calculator_app','boot_update', 'vbox_pointer','boot_efi') |
   ForEach-Object { "build\$_.obj" }
 & "$llvmBin\lld-link.exe" /subsystem:efi_application /entry:efi_main /nodefaultlib "/out:$testDirectory\esp\EFI\BOOT\BOOTX64.EFI" @testObjects @objects
 if ($LASTEXITCODE -ne 0) { throw 'Test linking failed.' }
@@ -44,11 +44,3 @@ foreach ($ram in @('128M', '512M')) {
   }
   Write-Output "Memory, clock, mouse, GUI, network, input and storage tests passed with $ram RAM."
 }
-
-
-
-
-
-
-
-

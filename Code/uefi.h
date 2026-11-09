@@ -49,7 +49,10 @@ typedef struct {
     uint64_t (*free_pool)(void *);
     UnusedService before_handle[9];
     uint64_t (*handle_protocol)(void *, const Guid *, void **);
-    UnusedService before_exit[9];
+    UnusedService reserved,register_notify,locate_handle,locate_device_path,install_configuration;
+    uint64_t (*load_image)(uint8_t,void *,void *,void *,uint64_t,void **);
+    uint64_t (*start_image)(void *,uint64_t *,uint16_t **);
+    UnusedService exit_image,unload_image;
     uint64_t (*exit_boot_services)(void *, uint64_t);
     UnusedService monotonic_count;
     uint64_t (*stall)(uint64_t);
@@ -102,7 +105,8 @@ struct File {
     uint64_t (*write)(File *, uint64_t *, const void *);
     uint64_t (*get_position)(File *, uint64_t *);
     uint64_t (*set_position)(File *, uint64_t);
-    UnusedService get_info, set_info;
+    uint64_t (*get_info)(File *,const Guid *,uint64_t *,void *);
+    uint64_t (*set_info)(File *,const Guid *,uint64_t,const void *);
     uint64_t (*flush)(File *);
 };
 
@@ -139,4 +143,3 @@ struct BlockIO {
 
 
 #endif
-

@@ -13,6 +13,7 @@
 #include "settings.h"
 #include "file_app.h"
 #include "power.h"
+#include "apps.h"
 
 
 
@@ -20,11 +21,19 @@
 typedef GuiRect Rect;
 static const BootInfo *display;
 static BootInfo canvas, wallpaper;
-static Rect terminal_window, system_window, files_window, about_window;
-static Rect dock, brand_button, terminal_button, system_button, files_button, clock_panel, menu;
+static WindowManager wm;
+#define terminal_window wm.rect[1]
+#define system_window wm.rect[2]
+#define files_window wm.rect[3]
+#define about_window wm.rect[4]
+#define calculator_window wm.rect[5]
+#define active_window wm.active
+#define visible wm.visible
+#define order wm.order
+static Rect dock, brand_button, terminal_button, system_button, files_button, calculator_button, clock_panel, menu;
 static PlatformPointer pointer;
-static int active_window, menu_open, terminal_started, scene_dirty, hovered;
-static int visible[5], order[4] = {1,2,3,4}, dragging, resizing, drag_x, drag_y, wallpaper_style, hardware_page;
+static int menu_open, terminal_started, scene_dirty, hovered;
+static int dragging, resizing, drag_x, drag_y, wallpaper_style, hardware_page;
 static unsigned volume = 100;
 static Rect context_menu;
 static int context_open;
@@ -32,19 +41,14 @@ static int power_dialog;
 static const char *power_error;
 static Rect power_panel;
 
-static Rect *window_rect(int window) { return window == 1 ? &terminal_window : window == 2 ? &system_window : window == 3 ? &files_window : &about_window; }
+static Rect *window_rect(int window) { return &wm.rect[window]; }
 static void focus(int window)
 {
-    active_window = window;
-    for (int i = 0; i < 4; ++i) if (order[i] == window) {
-        for (int j = i; j < 3; ++j) order[j] = order[j + 1];
-        order[3] = window; break;
-    }
+    windows_focus(&wm,(unsigned)window);
 }
 static void hide_window(int window)
 {
-    visible[window] = 0; active_window = 0;
-    for (int i = 3; i >= 0; --i) if (visible[order[i]]) { active_window = order[i]; break; }
+    windows_hide(&wm,(unsigned)window);
 }
 static char time_text[9] = "--:--:--", date_text[11] = "----/--/--";
 
@@ -147,6 +151,13 @@ static void brand_symbol(int x, int y)
     gui_line(&canvas,x + 26,y + 10,x + 18,y + 18,2,rgb(231,206,150));
     gui_line(&canvas,x + 18,y + 18,x + 18,y + 27,2,rgb(231,206,150));
 }
+static void calculator_symbol(int x,int y)
+{
+    gui_round_rect(&canvas,(Rect){x+4,y,30,38},7,rgb(128,177,188),255);
+    gui_round_rect(&canvas,(Rect){x+8,y+5,22,9},2,rgb(20,40,55),255);
+    for(int row=0;row<2;++row)for(int col=0;col<3;++col)
+        gui_round_rect(&canvas,(Rect){x+9+col*7,y+20+row*7,4,4},1,rgb(24,48,61),255);
+}
 
 static void create_wallpaper(void)
 {
@@ -195,20 +206,19 @@ static void draw_dock(void)
 {
     gui_shadow(&canvas,dock,24);
     gui_round_rect(&canvas,dock,24,rgb(19,32,51),235);
-    Rect buttons[4] = {brand_button,terminal_button,system_button,files_button};
-    int targets[4] = {1,2,3,9};
-    for (int index = 0; index < 4; ++index) {
-        if (hovered == targets[index] || (index && active_window == index))
+    Rect buttons[5] = {brand_button,terminal_button,system_button,files_button,calculator_button};
+    int targets[5] = {1,2,3,9,15},ids[5]={0,1,2,3,5};
+    for (int index = 0; index < 5; ++index) {
+        if (hovered == targets[index] || (index && active_window == ids[index]))
             gui_round_rect(&canvas,buttons[index],15,rgb(50,79,97),hovered == targets[index] ? 220 : 155);
     }
     brand_symbol(brand_button.x + 7,brand_button.y + 7);
     terminal_symbol(terminal_button.x + 4,terminal_button.y + 9);
     system_symbol(system_button.x + 5,system_button.y + 7);
     files_symbol(files_button.x + 4,files_button.y + 6);
-    if (active_window && active_window <= 3) {
-        Rect button = buttons[active_window];
-        gui_round_rect(&canvas,(Rect){button.x + 20,button.y + 56,10,3},1,rgb(142,220,213),255);
-    }
+    calculator_symbol(calculator_button.x+4,calculator_button.y+5);
+    for(unsigned i=1;i<5;++i)if(active_window==ids[i])
+        gui_round_rect(&canvas,(Rect){buttons[i].x+20,buttons[i].y+56,10,3},1,rgb(142,220,213),255);
 }
 
 static void chrome(Rect window, const char *title)
@@ -289,12 +299,12 @@ static void system_panel(void)
 static void scene(void)
 {
     restore_wallpaper((Rect){0,0,(int)canvas.width,(int)canvas.height});
-    for (int pass = 0; pass < 4; ++pass) {
+    for (unsigned pass = 0; pass < wm.count; ++pass) {
         int window = order[pass];
         if (window && visible[window]) {
             if (window == 1) { chrome(terminal_window,"Terminal"); console_redraw(); }
             else if (window == 2) system_panel();
-            else if (window == 3) { chrome(files_window,"Files & Notes"); file_app_draw(&canvas,files_window); }
+            else if (apps_find((unsigned)window)) { chrome(*window_rect(window),apps_find((unsigned)window)->title);apps_draw((unsigned)window,&canvas,*window_rect(window)); }
             else {
                 chrome(about_window,"About YAAI OS");
                 int x = about_window.x, y = about_window.y;
@@ -323,10 +333,12 @@ static void scene(void)
         label(menu.x + 22,menu.y + 140,"Files and notes",GUI_SMALL,rgb(218,232,246));
         if (hovered == 12) gui_round_rect(&canvas,(Rect){menu.x + 10,menu.y + 172,menu.width - 20,38},12,rgb(46,72,92),235);
         label(menu.x + 22,menu.y + 180,"About YAAI OS",GUI_SMALL,rgb(218,232,246));
+        if(hovered==16)gui_round_rect(&canvas,(Rect){menu.x+10,menu.y+212,menu.width-20,38},12,rgb(46,72,92),235);
+        label(menu.x+22,menu.y+220,"Calculator (F11)",GUI_SMALL,rgb(218,232,246));
         const char *power_items[] = {"Restart (R)", "Shut down (S)"};
         for (int i = 0; i < 2; ++i) {
-            if (hovered == 13 + i) gui_round_rect(&canvas,(Rect){menu.x + 10,menu.y + 212 + i * 40,menu.width - 20,38},12,rgb(46,72,92),235);
-            label(menu.x + 22,menu.y + 220 + i * 40,power_items[i],GUI_SMALL,rgb(218,232,246));
+            if (hovered == 13 + i) gui_round_rect(&canvas,(Rect){menu.x + 10,menu.y + 252 + i * 40,menu.width - 20,38},12,rgb(46,72,92),235);
+            label(menu.x + 22,menu.y + 260 + i * 40,power_items[i],GUI_SMALL,rgb(218,232,246));
         }
     }
     if (context_open) {
@@ -362,11 +374,10 @@ static void confirm_power(void)
 
 static void open_window(int window)
 {
-    focus(window);
-    visible[window] = 1;
+    if(apps_find((unsigned)window))apps_launch((unsigned)window);
+    else windows_open(&wm,(unsigned)window);
     menu_open = 0;
     context_open = 0;
-    if (window == 3) file_app_open();
     if (window == 1 && !terminal_started) {
         console_set_viewport(&canvas,terminal_window.x + 16,terminal_window.y + 64,
                              terminal_window.width - 32,terminal_window.height - 80);
@@ -374,7 +385,7 @@ static void open_window(int window)
         terminal_started = 1;
     }
     scene_dirty = 1;
-    serial_write(window == 1 ? "DESKTOP: Terminal opened\r\n" : window == 2 ? "DESKTOP: System opened\r\n" : window == 3 ? "DESKTOP: Files opened\r\n" : "DESKTOP: About opened\r\n");
+    serial_write(window == 1 ? "DESKTOP: Terminal opened\r\n" : window == 2 ? "DESKTOP: System opened\r\n" : window == 3 ? "DESKTOP: Files opened\r\n" : window == APP_CALCULATOR ? "DESKTOP: Calculator opened\r\n" : "DESKTOP: About opened\r\n");
 }
 
 static int target_at(int x, int y)
@@ -393,15 +404,17 @@ static int target_at(int x, int y)
         if (inside((Rect){menu.x + 10,menu.y + 92,menu.width - 20,38},x,y)) return 8;
         if (inside((Rect){menu.x + 10,menu.y + 132,menu.width - 20,38},x,y)) return 11;
         if (inside((Rect){menu.x + 10,menu.y + 172,menu.width - 20,38},x,y)) return 12;
-        if (inside((Rect){menu.x + 10,menu.y + 212,menu.width - 20,38},x,y)) return 13;
-        if (inside((Rect){menu.x + 10,menu.y + 252,menu.width - 20,38},x,y)) return 14;
+        if (inside((Rect){menu.x + 10,menu.y + 212,menu.width - 20,38},x,y)) return 16;
+        if (inside((Rect){menu.x + 10,menu.y + 252,menu.width - 20,38},x,y)) return 13;
+        if (inside((Rect){menu.x + 10,menu.y + 292,menu.width - 20,38},x,y)) return 14;
         return 0;
     }
     if (inside(brand_button,x,y)) return 1;
     if (inside(terminal_button,x,y)) return 2;
     if (inside(system_button,x,y)) return 3;
     if (inside(files_button,x,y)) return 9;
-    for (int pass = 3; pass >= 0; --pass) {
+    if (inside(calculator_button,x,y)) return 15;
+    for (int pass = (int)wm.count-1; pass >= 0; --pass) {
         int id = order[pass];
         if (!id || !visible[id]) continue;
         Rect window = *window_rect(id);
@@ -436,13 +449,13 @@ static void click(int x, int y)
         int id = target / 100, action = target % 100;
         focus(id);
         if (action == 4 || action == 9) {
-            hide_window(id);
+            if(action==4&&apps_find((unsigned)id))apps_close((unsigned)id);else hide_window(id);
         } else if (action == 10 || action == 11) {
             dragging = action == 10 ? id : 0;
             resizing = action == 11 ? id : 0;
             Rect window = *window_rect(id);
             drag_x = x - window.x; drag_y = y - window.y;
-        } else if (id == 3) file_app_click(files_window,x,y);
+        } else if (apps_find((unsigned)id)) apps_click((unsigned)id,*window_rect(id),x,y);
         else if (id == 2 && hardware_page && y >= system_window.y + 200 && y < system_window.y + 251) {
             if (x < system_window.x + 120) {
                 volume = volume == 100 ? 50 : volume == 50 ? 0 : 100;
@@ -466,6 +479,7 @@ static void click(int x, int y)
     else if (target == 3 || target == 6 || target == 8) { hardware_page = 0; open_window(2); }
     else if (target == 9 || target == 10 || target == 11) open_window(3);
     else if (target == 12) open_window(4);
+    else if (target == 15 || target == 16) open_window(APP_CALCULATOR);
     else if (target == 13 || target == 14) {
         power_dialog = target == 13 ? 2 : 1; power_error = 0;
         dragging = resizing = context_open = 0; scene_dirty = 1;
@@ -488,6 +502,7 @@ _Noreturn void desktop_run(const BootInfo *boot)
     wallpaper = canvas;
     wallpaper.framebuffer = boot->wallpaper_buffer;
     int width = (int)boot->width, height = (int)boot->height;
+    windows_initialize(&wm);
     int window_top = height < 600 ? 96 : 104;
     int maximum_height = height - window_top - 116;
     terminal_window = (Rect){0,window_top,minimum(960,width - 96),minimum(560,maximum_height)};
@@ -497,13 +512,17 @@ _Noreturn void desktop_run(const BootInfo *boot)
     files_window = (Rect){0,window_top,minimum(960,width - 96),minimum(560,maximum_height)};
     files_window.x = (width - files_window.width) / 2;
     about_window = (Rect){(width - 580) / 2,window_top,580,minimum(390,maximum_height)};
-    dock = (Rect){(width - 284) / 2,height - 96,284,76};
+    calculator_window=(Rect){(width-400)/2,window_top,400,minimum(540,maximum_height)};
+    for(unsigned id=1;id<=5;++id)windows_register(&wm,id,wm.rect[id]);
+    apps_initialize(&wm);
+    dock = (Rect){(width - 352) / 2,height - 96,352,76};
     brand_button = (Rect){dock.x + 13,dock.y + 10,50,50};
     terminal_button = (Rect){dock.x + 81,dock.y + 10,50,50};
     system_button = (Rect){dock.x + 149,dock.y + 10,50,50};
     files_button = (Rect){dock.x + 217,dock.y + 10,50,50};
+    calculator_button=(Rect){dock.x+285,dock.y+10,50,50};
     clock_panel = (Rect){width - 254,24,226,64};
-    menu = (Rect){dock.x,dock.y - 315,242,300};
+    menu = (Rect){dock.x,dock.y - 355,242,340};
     power_panel = (Rect){(width - 520) / 2,(height - 240) / 2,520,240};
     platform_network_initialize();
     if (!platform_input_initialize(boot->width,boot->height)) {
@@ -538,17 +557,18 @@ _Noreturn void desktop_run(const BootInfo *boot)
             else if (key == 3) { hardware_page = 1; open_window(2); }
             else if (key == 4) open_window(3);
             else if (key == 5) open_window(4);
-            else if (key == 6 && active_window == 3) { file_app_key(key); scene_dirty = 1; }
+            else if (key == 20) open_window(APP_CALCULATOR);
+            else if (key == 6 && active_window == APP_NOTES) { apps_key(APP_NOTES,key); scene_dirty = 1; }
             else if (key == 27) {
-                if(active_window==3&&file_app_escape()){scene_dirty=1;continue;}
+                if(apps_escape((unsigned)active_window)){scene_dirty=1;continue;}
                 if (context_open || menu_open) context_open = menu_open = 0;
                 else if (active_window) {
-                    hide_window(active_window);
+                    if(apps_find((unsigned)active_window))apps_close((unsigned)active_window);else hide_window(active_window);
                 }
                 scene_dirty = 1;
             }
             else if (key && active_window == 1) { shell_key(key); terminal_dirty = 1; }
-            else if (key && active_window == 3) { file_app_key(key); scene_dirty = 1; }
+            else if (key && apps_find((unsigned)active_window)) { apps_key((unsigned)active_window,key); scene_dirty = 1; }
         }
         PlatformPointer event;
         for (unsigned count = 0; count < 64 && platform_pointer_read(&event); ++count) {
@@ -569,8 +589,9 @@ _Noreturn void desktop_run(const BootInfo *boot)
                     window->x = minimum(window->x,width - window->width);
                     window->y = minimum(window->y,height - 100 - window->height);
                 } else {
-                    int min_width = id == 1 ? 420 : 544;
-                    int min_height = id == 1 ? 220 : 260;
+                    const AppDefinition *app=apps_find((unsigned)id);
+                    int min_width = app?app->min_width:id == 1 ? 420 : 544;
+                    int min_height = app?app->min_height:id == 1 ? 220 : 260;
                     window->width = event.x - window->x + 1;
                     window->height = event.y - window->y + 1;
                     if (window->width < min_width) window->width = min_width;
@@ -581,8 +602,8 @@ _Noreturn void desktop_run(const BootInfo *boot)
                 if (id == 1) console_reframe(window->x + 16,window->y + 64,window->width - 32,window->height - 80);
                 scene_dirty = 1;
             }
-            if(active_window==3&&!power_dialog&&!dragging&&!resizing){
-                file_app_pointer(files_window,event.x,event.y,event.buttons);
+            if(apps_find((unsigned)active_window)&&!power_dialog&&!dragging&&!resizing){
+                apps_pointer((unsigned)active_window,*window_rect(active_window),event.x,event.y,event.buttons);
                 if(event.buttons&1)scene_dirty=1;
             }
             pointer = event;

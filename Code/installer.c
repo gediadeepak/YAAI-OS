@@ -4,12 +4,15 @@
 #include "memory.h"
 #include "clock.h"
 #include "brand.h"
+#include "boot_efi.h"
 
 static const Guid loaded_image_guid = {0x5b1b31a1,0x9562,0x11d2,{0x8e,0x3f,0,0xa0,0xc9,0x69,0x72,0x3b}};
 static const Guid filesystem_guid = {0x964e5b22,0x6459,0x11d2,{0x8e,0x39,0,0xa0,0xc9,0x69,0x72,0x3b}};
 static const Guid block_guid = {0x964e5b21,0x6459,0x11d2,{0x8e,0x39,0,0xa0,0xc9,0x69,0x72,0x3b}};
 static const Guid path_guid = {0x09576e91,0x6d3f,0x11d2,{0x8e,0x39,0,0xa0,0xc9,0x69,0x72,0x3b}};
 static SystemTable *firmware;
+static File *installed_root;
+static void *installed_device;
 _Static_assert(offsetof(BootServices,connect_controller)==264,"UEFI ConnectController ABI");
 
 static void print(const char *text)
@@ -178,18 +181,23 @@ static int installed_settings(void *source_device, SetupConfig *config)
         services->free_pool(handles);handles=0;count=0;
     }
     if (services->locate_handles(2, &filesystem_guid, 0, &count, &handles) != 0) return 0;
-    int found = 0;
-    for (uint64_t index = 0; index < count && !found; ++index) {
+    int found = 0;installed_root=0;installed_device=0;
+    for (uint64_t index = 0; index < count; ++index) {
         if (handles[index] == source_device) continue;
         FileSystem *filesystem = 0;
         File *root = 0;
         if (services->handle_protocol(handles[index], &filesystem_guid, (void **)&filesystem) == 0 &&
             filesystem->open_volume(filesystem, &root) == 0) {
-            found = load_settings(root, config);
-            root->close(root);
+            SetupConfig candidate;
+            if(load_settings(root,&candidate)){
+                ++found;
+                if(found==1){installed_root=root;installed_device=handles[index];*config=candidate;}
+                else root->close(root);
+            }else root->close(root);
         }
     }
     services->free_pool(handles);
+    if(found>1){installed_root->close(installed_root);installed_root=0;}
     return found;
 }
 
@@ -207,10 +215,41 @@ uint64_t installer_run(void *image_handle, SystemTable *system, SetupConfig *con
 
     // Development boots use the latest EFI build and reuse the installed disk's
     // settings. A standalone installed boot reads its own settings first.
-    if (load_settings(root, config) || installed_settings(loaded->device, config)) {
+    if (load_settings(root, config)) {
         print("Installed system found. Starting YAAI OS.\n");
         root->close(root);
         return 0;
+    }
+    int installed=installed_settings(loaded->device,config);
+    if(installed>1){
+        print("Several installed systems were found. Attach only one system disk before updating.\n");
+        root->close(root);return UINT64_C(0x8000000000000015);
+    }
+    if(installed==1){
+        EfiBootStore context;BootStore store=boot_efi_store(&context,installed_root,services);
+        for(;;){
+            page("EXISTING INSTALLATION");
+            print("Your installed system and documents are preserved.\n\n"
+                  "1  UPDATE INSTALLED YAAI OS\n2  START INSTALLED SYSTEM\n"
+                  "3  ROLL BACK TO PREVIOUS VERSION\n4  TRY THIS BUILD WITHOUT UPDATING\n");
+            unsigned choice=(unsigned)choose_number(1,4);
+            if(choice==4){installed_root->close(installed_root);root->close(root);return 0;}
+            if(choice==1||choice==3){
+                uint8_t *image=0;uint64_t image_size=0;
+                if(choice==1&&!read_file(root,u"\\EFI\\BOOT\\BOOTX64.EFI",&image,&image_size)){
+                    print("Cannot read the update image. No installed files were changed.\n");continue;
+                }
+                print("Checking and saving boot files. Do not power off during this step...\n");
+                UpdateResult result=boot_store_update(&store,image,image_size,choice==3);
+                if(image)services->free_pool(image);
+                print(boot_update_message(result));print("\n");
+                if(result!=UPDATE_OK&&result!=UPDATE_UNCHANGED){char answer[8];print("Press Enter to return to the menu.\n");input(answer,sizeof(answer));continue;}
+                print("Booting the installed disk. After shutdown, detach the installer VDI.\n");
+            }
+            uint64_t status=boot_efi_start(system,image_handle,installed_device,installed_root,BOOT_MAIN,0);
+            if(!status){installed_root->close(installed_root);root->close(root);return 0;}
+            print("The installed boot image could not start. You can retry the update or roll back.\n");
+        }
     }
 
     page("WELCOME / FIRST START");
