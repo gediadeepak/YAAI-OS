@@ -61,13 +61,13 @@ A power loss during that one-time replacement may require booting installer medi
 again; retain the powered-off VDI backup. This is a prototype recovery mechanism,
 not a guarantee against every firmware, filesystem or physical-storage failure.
 
-For code rollback, changes are on `codex/single-disk-app-framework`.
+The file-manager split is on `codex/file-manager`; Settings changes are on `codex/settings-app`; window-control changes are on `codex/window-controls`; the installer/app milestones are on `codex/single-disk-app-framework`.
 Use Git revert on the feature commit to undo a change while keeping history.
 Git does not back up ignored VDIs or documents stored inside them.
 
 ## Desktop applications
 
-Files & Notes and Calculator use a shared application registry, lifecycle callbacks,
+Files, Notes, Calculator and Settings use a shared application registry, lifecycle callbacks,
 window manager and filesystem service table. Apps retain their state while
 minimized. Unsaved notes veto close until saved or explicitly discarded.
 
@@ -80,6 +80,77 @@ process isolation or external executable loader yet. The same app code builds fo
 x86-64 PC/UEFI and the ARM64 QEMU virt preview. The installed-disk updater currently
 targets x86-64; this does not enable installation on arbitrary phones.
 
+## Files and Notes
+
+**F4** opens Files and **F12** opens Notes. Both have independent dock icons,
+window controls and minimized state. The document filesystem format is unchanged.
+
+Files lists folders first, then files by name, with icons and byte sizes.
+Breadcrumb buttons and Up navigate folders without disturbing an unsaved note.
+Double-click an item, or select it and press Enter, to open it. Plain ASCII text
+opens in Notes; binary files are rejected. Notes is currently single-document.
+
+Right-click in Files for Open, Rename, Move to folder, Move to Trash, New folder
+and New note. Move accepts a folder path, with / meaning Home. Trash offers
+Restore and Delete permanently; permanent removal requires typing DELETE.
+Nonempty folders cannot be permanently removed until their contents are handled.
+
+An open note and its parent folders cannot be renamed, moved or trashed from
+Files until the note is closed. Notes keeps its close/save/discard protection,
+undo/redo, selection and internal clipboard. Ctrl+S/F6 saves; F7 twice discards.
+Changing the Notes filename saves a new copy and refuses to overwrite another
+existing file. Files refreshes automatically after a Notes save; Refresh rereads
+changes made elsewhere.
+
+The footer distinguishes document payload capacity, free entry slots and total
+data-volume size. YAAIFS v2 still has a combined 64-file/folder limit and a 64 KiB
+per-file limit; free payload capacity is a filesystem quota, not all unused disk
+space. New folders and text files use the existing disk and need no extra VDI.
+
+Keyboard in Files: arrows select, Enter opens, N creates a folder, F creates a
+note, R renames (or restores in Trash), M moves, T trashes, P permanently deletes
+in Trash, U refreshes. Escape cancels a dialog or context menu before closing
+the window. In a filename/path dialog, Ctrl+A selects the existing value.
+
+
+## Settings
+
+Open **Settings** from the dock, desktop menu, or **F2**. **F3** opens its Devices
+section. The app includes Display, Appearance, Sound, Date & time, About and Devices.
+
+Wallpaper, Ocean/Amber accents, volume, mute and country/time-zone changes apply
+immediately. Resolution choices (Auto, 1024 x 768, 1280 x 720, 1920 x 1080) apply
+on the next boot. Unsupported or rejected modes fall back to the firmware's best
+usable mode. UI scaling remains fixed at 100%; runtime resolution changes and
+manual clock editing are not implemented.
+
+Preferences use checksummed, redundant UEFI-variable records. Keep the VM's
+firmware/NVRAM file to retain preferences when moving the VM; they are not carried
+by the system VDI alone. Existing wallpaper/volume/time-zone records remain
+compatible. The status line reports when changes could not be saved.
+
+Keyboard: Tab cycles sections, 1-6 selects a section, and A-G chooses its displayed
+options in row order. Click controls normally with the pointer. Sound playback
+requires a supported output device. Devices reports actual availability rather
+than enabling unsupported Wi-Fi, SIM or battery hardware.
+
+
+## Window controls
+
+- Click the square title-bar button to maximize or restore a window.
+- **Alt+Tab** switches apps; hold Alt and press Tab repeatedly to cycle through all
+  open apps. **Alt+Shift+Tab** cycles backward. Minimized apps are included.
+- **Alt+F10** maximizes/restores, **Alt+F9** minimizes, and **Alt+Down** restores.
+- **Alt+Left / Alt+Right** snaps the active window to the left or right half.
+- Drag a title bar to the left/right screen edge and release to snap, or to the top
+  edge to maximize. Dragging an arranged window restores its normal size.
+- Dock indicators mark open apps. Click an app icon to reopen it after minimizing;
+  its document or Calculator result is retained. About also has a dock icon.
+
+Capture the VM keyboard before using shortcuts; otherwise the host may handle
+Alt+Tab. Snapping is skipped when half the screen cannot fit the app's minimum
+size. Snapped windows reserve clock and dock space. Maximized windows fill the entire screen and hide the desktop clock and dock until restored or minimized.
+
 ## Validation
 
 ```powershell
@@ -89,6 +160,6 @@ targets x86-64; this does not enable installation on arbitrary phones.
 ```
 
 The VM suites cover memory, input, graphics, storage, documents, app lifecycle,
-Calculator and boot-update fault injection at 128 MiB and 512 MiB. The independent
+Calculator, independent Files/Notes workflows, saved Settings/resolution fallback and boot-update fault injection at 128 MiB and 512 MiB. The independent
 raw-disk verifier compares the complete documents partition, setup settings, GPT,
 boot records and retained original executable.

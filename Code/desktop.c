@@ -14,6 +14,8 @@
 #include "file_app.h"
 #include "power.h"
 #include "apps.h"
+#include "desktop_keys.h"
+#include "settings_app.h"
 
 
 
@@ -24,16 +26,17 @@ static BootInfo canvas, wallpaper;
 static WindowManager wm;
 #define terminal_window wm.rect[1]
 #define system_window wm.rect[2]
-#define files_window wm.rect[3]
+#define notes_window wm.rect[3]
+#define files_window wm.rect[6]
 #define about_window wm.rect[4]
 #define calculator_window wm.rect[5]
 #define active_window wm.active
 #define visible wm.visible
 #define order wm.order
-static Rect dock, brand_button, terminal_button, system_button, files_button, calculator_button, clock_panel, menu;
+static Rect dock, brand_button, terminal_button, system_button, files_button, calculator_button, about_button, notes_button, clock_panel, menu;
 static PlatformPointer pointer;
 static int menu_open, terminal_started, scene_dirty, hovered;
-static int dragging, resizing, drag_x, drag_y, wallpaper_style, hardware_page;
+static int dragging, resizing, drag_x, drag_y, wallpaper_style;
 static unsigned volume = 100;
 static Rect context_menu;
 static int context_open;
@@ -49,6 +52,28 @@ static void focus(int window)
 static void hide_window(int window)
 {
     windows_hide(&wm,(unsigned)window);
+}
+static Rect work_area;
+static int fullscreen_window(void) {
+    return active_window && visible[active_window] && wm.layout[active_window]==WINDOW_MAXIMIZED;
+}
+static void reframe_terminal(void) {
+    if(terminal_started) console_reframe(terminal_window.x+16,terminal_window.y+64,
+                                        terminal_window.width-32,terminal_window.height-80);
+}
+static void arrange_window(int id,int layout) {
+    if(!id)return;
+    const AppDefinition *app=apps_find((unsigned)id);
+    int mw=app?app->min_width:id==1?420:544, mh=app?app->min_height:id==1?220:260;
+    Rect area=layout==WINDOW_MAXIMIZED?(Rect){0,0,(int)canvas.width,(int)canvas.height}:work_area;
+    if(windows_arrange(&wm,(unsigned)id,layout,area,mw,mh)) {
+        if(id==1)reframe_terminal();
+        scene_dirty=1;
+        serial_write("DESKTOP: window layout changed\r\n");
+    }
+}
+static void toggle_maximize(int id) {
+    if(id)arrange_window(id,wm.layout[id]==WINDOW_MAXIMIZED?WINDOW_NORMAL:WINDOW_MAXIMIZED);
 }
 static char time_text[9] = "--:--:--", date_text[11] = "----/--/--";
 
@@ -71,16 +96,6 @@ static void label(int x, int y, const char *message, GuiFont font, uint32_t fill
 static void centered(Rect rect, int y, const char *message, GuiFont font, uint32_t fill)
 {
     label(rect.x + (rect.width - gui_text_width(message,font)) / 2,y,message,font,fill);
-}
-
-static void number(int x, int y, uint64_t value, const char *suffix, GuiFont font)
-{
-    char digits[21];
-    unsigned first = 20;
-    digits[first] = 0;
-    do { digits[--first] = (char)('0' + value % 10); value /= 10; } while (value);
-    label(x,y,digits + first,font,rgb(236,241,249));
-    label(x + gui_text_width(digits + first,font) + 7,y + (font == GUI_HEADING ? 10 : 0),suffix,GUI_SMALL,rgb(143,162,187));
 }
 
 static void present(Rect rect)
@@ -206,95 +221,53 @@ static void draw_dock(void)
 {
     gui_shadow(&canvas,dock,24);
     gui_round_rect(&canvas,dock,24,rgb(19,32,51),235);
-    Rect buttons[5] = {brand_button,terminal_button,system_button,files_button,calculator_button};
-    int targets[5] = {1,2,3,9,15},ids[5]={0,1,2,3,5};
-    for (int index = 0; index < 5; ++index) {
+    Rect buttons[7] = {brand_button,terminal_button,system_button,files_button,calculator_button,about_button,notes_button};
+    int targets[7] = {1,2,3,9,15,12,17},ids[7]={0,1,2,6,5,4,3};
+    for (int index = 0; index < 7; ++index) {
         if (hovered == targets[index] || (index && active_window == ids[index]))
-            gui_round_rect(&canvas,buttons[index],15,rgb(50,79,97),hovered == targets[index] ? 220 : 155);
+            gui_round_rect(&canvas,buttons[index],15,(settings_current()->theme?rgb(109,81,43):rgb(50,79,97)),hovered == targets[index] ? 220 : 155);
     }
     brand_symbol(brand_button.x + 7,brand_button.y + 7);
     terminal_symbol(terminal_button.x + 4,terminal_button.y + 9);
     system_symbol(system_button.x + 5,system_button.y + 7);
     files_symbol(files_button.x + 4,files_button.y + 6);
     calculator_symbol(calculator_button.x+4,calculator_button.y+5);
-    for(unsigned i=1;i<5;++i)if(active_window==ids[i])
-        gui_round_rect(&canvas,(Rect){buttons[i].x+20,buttons[i].y+56,10,3},1,rgb(142,220,213),255);
+    gui_round_rect(&canvas,(Rect){about_button.x+12,about_button.y+8,28,28},14,rgb(75,112,135),255);
+    label(about_button.x+22,about_button.y+12,"i",GUI_BODY,rgb(227,241,249));
+    gui_round_rect(&canvas,(Rect){notes_button.x+12,notes_button.y+5,28,36},5,rgb(161,204,215),255);
+    for(int line=0;line<3;++line)gui_line(&canvas,notes_button.x+18,notes_button.y+15+line*7,notes_button.x+33,notes_button.y+15+line*7,2,rgb(41,77,94));
+    for(unsigned i=1;i<7;++i)if(wm.opened[ids[i]])
+        gui_round_rect(&canvas,(Rect){buttons[i].x+20,buttons[i].y+56,10,3},1,active_window==ids[i]?(settings_current()->theme?rgb(235,195,120):rgb(142,220,213)):rgb(102,125,145),255);
 }
 
-static void chrome(Rect window, const char *title)
+static void chrome(int id, Rect window, const char *title)
 {
-    gui_shadow(&canvas,window,20);
-    gui_round_rect(&canvas,window,20,rgb(61,81,103),220);
-    gui_round_rect(&canvas,(Rect){window.x + 1,window.y + 1,window.width - 2,window.height - 2},19,rgb(14,23,39),250);
+    int maximized=wm.layout[id]==WINDOW_MAXIMIZED;
+    if(!maximized)gui_shadow(&canvas,window,20);
+    gui_round_rect(&canvas,window,maximized?0:20,rgb(61,81,103),220);
+    gui_round_rect(&canvas,(Rect){window.x + 1,window.y + 1,window.width - 2,window.height - 2},maximized?0:19,rgb(14,23,39),250);
     label(window.x + 25,window.y + 15,title,GUI_BODY,rgb(218,232,247));
     gui_line(&canvas,window.x + 20,window.y + 51,window.x + window.width - 21,window.y + 51,1,rgb(36,52,73));
     int x = window.x + window.width - 35, y = window.y + 25;
-    gui_round_rect(&canvas,(Rect){x - 12,y - 12,24,24},12,hovered == 4 ? rgb(143,69,78) : rgb(57,47,64),255);
+    gui_round_rect(&canvas,(Rect){x - 12,y - 12,24,24},12,hovered == 100*id+4 ? rgb(143,69,78) : rgb(57,47,64),255);
     gui_line(&canvas,x - 4,y - 4,x + 4,y + 4,1,rgb(236,190,192));
     gui_line(&canvas,x + 4,y - 4,x - 4,y + 4,1,rgb(236,190,192));
-    gui_line(&canvas,x - 46,y + 3,x - 34,y + 3,2,rgb(170,196,215));
+    gui_line(&canvas,x - 82,y + 3,x - 70,y + 3,2,rgb(170,196,215));
+    int bx=x-40;
+    if(hovered==100*id+13)gui_round_rect(&canvas,(Rect){bx-15,y-15,30,30},8,rgb(46,72,92),255);
+    if(wm.layout[id]==WINDOW_MAXIMIZED) {
+        gui_line(&canvas,bx-3,y-6,bx+6,y-6,1,rgb(170,196,215));
+        gui_line(&canvas,bx+6,y-6,bx+6,y+3,1,rgb(170,196,215));
+    }
+    gui_line(&canvas,bx-6,y-3,bx+3,y-3,1,rgb(170,196,215));
+    gui_line(&canvas,bx-6,y-3,bx-6,y+6,1,rgb(170,196,215));
+    gui_line(&canvas,bx+3,y-3,bx+3,y+6,1,rgb(170,196,215));
+    gui_line(&canvas,bx-6,y+6,bx+3,y+6,1,rgb(170,196,215));
     gui_line(&canvas,window.x + window.width - 22,window.y + window.height - 9,
              window.x + window.width - 9,window.y + window.height - 22,2,rgb(106,146,164));
 }
 
-static void metric_card(Rect card, const char *title, uint64_t value, int compact)
-{
-    gui_round_rect(&canvas,card,14,rgb(31,47,67),225);
-    label(card.x + 14,card.y + 10,title,GUI_SMALL,rgb(148,171,194));
-    number(card.x + 14,card.y + (compact ? 31 : 42),value,"MiB",GUI_HEADING);
-}
-
-static void system_panel(void)
-{
-    Rect window = system_window;
-    chrome(window,hardware_page ? "Devices and sound" : "System overview");
-    int x = window.x + 24, y = window.y;
-    if (hardware_page) {
-        PlatformPower power = platform_power();
-        const char *messages[] = {
-            platform_audio_available() ? "Sound: stereo output ready" : "Sound: no supported output device",
-            platform_network_status(),
-            platform_wireless_status(),
-            "SIM: modem support not implemented",
-            !power.supported ? "Power: reporting unavailable" :
-                !power.present ? "Power: no battery reported" :
-                power.charging ? "Battery: charging" : power.online ? "Battery: plugged in" : "Battery: discharging"
-        };
-        for (int index = 0; index < 5; ++index)
-            label(x,y + 60 + index * 24,messages[index],GUI_SMALL,rgb(190,211,230));
-        if (power.percent >= 0) number(x + 300,y + 154,(unsigned)power.percent,"%",GUI_BODY);
-        label(x,y + 180,"IPv4:",GUI_SMALL,rgb(151,218,214));
-        label(x + 50,y + 180,platform_network_address(),GUI_SMALL,rgb(190,211,230));
-        label(x,y + 202,"Volume: click to cycle 100 / 50 / mute",GUI_SMALL,rgb(151,218,214));
-        number(x,y + 226,volume,"%",GUI_BODY);
-        label(x + 105,y + 226,"Play test sound",GUI_SMALL,rgb(218,203,160));
-        return;
-    }
-    int compact = window.height < 420;
-    if (compact) label(x,y + 55,OS_TAGLINE,GUI_SMALL,rgb(185,185,165));
-    else {
-        label(x,y + 71,OS_NAME,GUI_HEADING,rgb(218,235,240));
-        label(x,y + 110,OS_TAGLINE,GUI_SMALL,rgb(185,185,165));
-    }
-    int card_y = y + (compact ? 85 : 147), card_height = compact ? 72 : 96;
-    int card_width = (window.width - 72) / 3;
-    MemoryStats stats = memory_stats();
-    metric_card((Rect){x,card_y,card_width,card_height},"Total RAM",(stats.usable_pages + stats.retained_pages + stats.limited_pages) / 256,compact);
-    metric_card((Rect){x + card_width + 12,card_y,card_width,card_height},"In use",(stats.retained_pages + stats.allocated_pages) / 256,compact);
-    metric_card((Rect){x + card_width * 2 + 24,card_y,card_width,card_height},"Available",stats.free_pages / 256,compact);
-    int storage_y = y + (compact ? 170 : 267), region_y = y + (compact ? 219 : 345);
-    label(x,storage_y,"Storage",GUI_SMALL,rgb(205,184,137));
-    if (setup_valid(&display->setup)) {
-        number(x,storage_y + 22,display->setup.esp_sectors / 2048,"MiB system",GUI_BODY);
-        number(x + window.width / 2 - 24,storage_y + 22,display->setup.data_sectors / 2048,"MiB data",GUI_BODY);
-    } else label(x,storage_y + 22,"Live session",GUI_BODY,rgb(192,211,229));
-    label(x,region_y,"Country and time zone (click to change)",GUI_SMALL,rgb(205,184,137));
-    label(x,region_y + 22,setup_zone_name(settings_current()->zone),GUI_SMALL,rgb(198,217,234));
-    if (!compact) {
-        label(x,region_y + 53,date_text,GUI_BODY,rgb(170,192,213));
-        label(x + 130,region_y + 53,time_text,GUI_BODY,rgb(170,192,213));
-    }
-}
+static void system_panel(void) {chrome(2,system_window,"Settings");apps_draw(2,&canvas,system_window);}
 
 static void scene(void)
 {
@@ -302,11 +275,11 @@ static void scene(void)
     for (unsigned pass = 0; pass < wm.count; ++pass) {
         int window = order[pass];
         if (window && visible[window]) {
-            if (window == 1) { chrome(terminal_window,"Terminal"); console_redraw(); }
+            if (window == 1) { chrome(1,terminal_window,"Terminal"); console_redraw(); }
             else if (window == 2) system_panel();
-            else if (apps_find((unsigned)window)) { chrome(*window_rect(window),apps_find((unsigned)window)->title);apps_draw((unsigned)window,&canvas,*window_rect(window)); }
+            else if (apps_find((unsigned)window)) { chrome(window,*window_rect(window),apps_find((unsigned)window)->title);apps_draw((unsigned)window,&canvas,*window_rect(window)); }
             else {
-                chrome(about_window,"About YAAI OS");
+                chrome(4,about_window,"About YAAI OS");
                 int x = about_window.x, y = about_window.y;
                 int compact = about_window.height < 350;
                 if (!compact) brand_symbol(x + about_window.width / 2 - 18,y + 68);
@@ -315,12 +288,11 @@ static void scene(void)
                 centered(about_window,y + (compact ? 144 : 206),"VERSION I",GUI_SMALL,rgb(218,196,145));
                 centered(about_window,y + (compact ? 176 : 246),platform_name(),GUI_SMALL,rgb(164,184,206));
                 centered(about_window,y + (compact ? 204 : 280),settings_status(),GUI_SMALL,rgb(164,196,200));
-                centered(about_window,y + (compact ? 232 : 322),"F1 Terminal   F2 System   F3 Devices   F4 Files",GUI_SMALL,rgb(151,173,194));
+                centered(about_window,y + (compact ? 232 : 322),"F1 Terminal   F2 Settings   F3 Devices   F4 Files",GUI_SMALL,rgb(151,173,194));
             }
         }
     }
-    clock_widget(1);
-    draw_dock();
+    if(!fullscreen_window()) {clock_widget(1);draw_dock();}
     if (menu_open) {
         gui_shadow(&canvas,menu,20);
         gui_round_rect(&canvas,menu,20,rgb(21,35,54),248);
@@ -328,17 +300,19 @@ static void scene(void)
         if (hovered == 7) gui_round_rect(&canvas,(Rect){menu.x + 10,menu.y + 52,menu.width - 20,38},12,rgb(46,72,92),235);
         if (hovered == 8) gui_round_rect(&canvas,(Rect){menu.x + 10,menu.y + 92,menu.width - 20,38},12,rgb(46,72,92),235);
         label(menu.x + 22,menu.y + 60,"Open Terminal",GUI_SMALL,rgb(218,232,246));
-        label(menu.x + 22,menu.y + 100,"System information",GUI_SMALL,rgb(218,232,246));
+        label(menu.x + 22,menu.y + 100,"Settings",GUI_SMALL,rgb(218,232,246));
         if (hovered == 11) gui_round_rect(&canvas,(Rect){menu.x + 10,menu.y + 132,menu.width - 20,38},12,rgb(46,72,92),235);
-        label(menu.x + 22,menu.y + 140,"Files and notes",GUI_SMALL,rgb(218,232,246));
+        label(menu.x + 22,menu.y + 140,"Files",GUI_SMALL,rgb(218,232,246));
         if (hovered == 12) gui_round_rect(&canvas,(Rect){menu.x + 10,menu.y + 172,menu.width - 20,38},12,rgb(46,72,92),235);
         label(menu.x + 22,menu.y + 180,"About YAAI OS",GUI_SMALL,rgb(218,232,246));
         if(hovered==16)gui_round_rect(&canvas,(Rect){menu.x+10,menu.y+212,menu.width-20,38},12,rgb(46,72,92),235);
         label(menu.x+22,menu.y+220,"Calculator (F11)",GUI_SMALL,rgb(218,232,246));
+        if(hovered==18)gui_round_rect(&canvas,(Rect){menu.x+10,menu.y+252,menu.width-20,38},12,rgb(46,72,92),235);
+        label(menu.x+22,menu.y+260,"Notes (F12)",GUI_SMALL,rgb(218,232,246));
         const char *power_items[] = {"Restart (R)", "Shut down (S)"};
         for (int i = 0; i < 2; ++i) {
-            if (hovered == 13 + i) gui_round_rect(&canvas,(Rect){menu.x + 10,menu.y + 252 + i * 40,menu.width - 20,38},12,rgb(46,72,92),235);
-            label(menu.x + 22,menu.y + 260 + i * 40,power_items[i],GUI_SMALL,rgb(218,232,246));
+            if (hovered == 13 + i) gui_round_rect(&canvas,(Rect){menu.x + 10,menu.y + 292 + i * 40,menu.width - 20,38},12,rgb(46,72,92),235);
+            label(menu.x + 22,menu.y + 300 + i * 40,power_items[i],GUI_SMALL,rgb(218,232,246));
         }
     }
     if (context_open) {
@@ -367,7 +341,7 @@ static void scene(void)
 }
 static void confirm_power(void)
 {
-    if (!file_app_save_pending()) power_error = "Save failed. Cancel and check Files.";
+    if (!file_app_save_pending()) power_error = "Save failed. Cancel and check Notes.";
     else power_error = power_finish(display,power_dialog == 2);
     scene_dirty = 1;
 }
@@ -376,6 +350,8 @@ static void open_window(int window)
 {
     if(apps_find((unsigned)window))apps_launch((unsigned)window);
     else windows_open(&wm,(unsigned)window);
+    const AppDefinition *opened=apps_find((unsigned)window);
+    if(opened&&(wm.rect[window].width<opened->min_width||wm.rect[window].height<opened->min_height))arrange_window(window,WINDOW_MAXIMIZED);
     menu_open = 0;
     context_open = 0;
     if (window == 1 && !terminal_started) {
@@ -385,7 +361,7 @@ static void open_window(int window)
         terminal_started = 1;
     }
     scene_dirty = 1;
-    serial_write(window == 1 ? "DESKTOP: Terminal opened\r\n" : window == 2 ? "DESKTOP: System opened\r\n" : window == 3 ? "DESKTOP: Files opened\r\n" : window == APP_CALCULATOR ? "DESKTOP: Calculator opened\r\n" : "DESKTOP: About opened\r\n");
+    serial_write(window == 1 ? "DESKTOP: Terminal opened\r\n" : window == 2 ? "DESKTOP: Settings opened\r\n" : window == APP_FILES ? "DESKTOP: Files opened\r\n" : window == APP_NOTES ? "DESKTOP: Notes opened\r\n" : window == APP_CALCULATOR ? "DESKTOP: Calculator opened\r\n" : "DESKTOP: About opened\r\n");
 }
 
 static int target_at(int x, int y)
@@ -405,22 +381,28 @@ static int target_at(int x, int y)
         if (inside((Rect){menu.x + 10,menu.y + 132,menu.width - 20,38},x,y)) return 11;
         if (inside((Rect){menu.x + 10,menu.y + 172,menu.width - 20,38},x,y)) return 12;
         if (inside((Rect){menu.x + 10,menu.y + 212,menu.width - 20,38},x,y)) return 16;
-        if (inside((Rect){menu.x + 10,menu.y + 252,menu.width - 20,38},x,y)) return 13;
-        if (inside((Rect){menu.x + 10,menu.y + 292,menu.width - 20,38},x,y)) return 14;
+        if (inside((Rect){menu.x + 10,menu.y + 252,menu.width - 20,38},x,y)) return 18;
+        if (inside((Rect){menu.x + 10,menu.y + 292,menu.width - 20,38},x,y)) return 13;
+        if (inside((Rect){menu.x + 10,menu.y + 332,menu.width - 20,38},x,y)) return 14;
         return 0;
     }
+    if(!fullscreen_window()) {
     if (inside(brand_button,x,y)) return 1;
     if (inside(terminal_button,x,y)) return 2;
     if (inside(system_button,x,y)) return 3;
     if (inside(files_button,x,y)) return 9;
     if (inside(calculator_button,x,y)) return 15;
+    if (inside(about_button,x,y)) return 12;
+    if (inside(notes_button,x,y)) return 17;
+    }
     for (int pass = (int)wm.count-1; pass >= 0; --pass) {
         int id = order[pass];
         if (!id || !visible[id]) continue;
         Rect window = *window_rect(id);
         if (!inside(window,x,y)) continue;
         if (inside((Rect){window.x + window.width - 53,window.y + 7,36,36},x,y)) return 100 * id + 4;
-        if (inside((Rect){window.x + window.width - 89,window.y + 7,36,36},x,y)) return 100 * id + 9;
+        if (inside((Rect){window.x + window.width - 89,window.y + 7,36,36},x,y)) return 100 * id + 13;
+        if (inside((Rect){window.x + window.width - 125,window.y + 7,36,36},x,y)) return 100 * id + 9;
         if (x >= window.x + window.width - 25 && y >= window.y + window.height - 25) return 100 * id + 11;
         return 100 * id + (y < window.y + 52 ? 10 : 12);
     }
@@ -437,7 +419,7 @@ static void click(int x, int y)
     }
     if (target >= 20 && target <= 23) {
         context_open = 0;
-        if (target == 23) { hardware_page = 1; open_window(2); }
+        if (target == 23) { settings_app_select(5); open_window(2); }
         else { wallpaper_style = target - 20; settings_wallpaper((unsigned)wallpaper_style); create_wallpaper(); scene_dirty = 1; }
         serial_write("DESKTOP: context action\r\n");
         return;
@@ -449,35 +431,36 @@ static void click(int x, int y)
         int id = target / 100, action = target % 100;
         focus(id);
         if (action == 4 || action == 9) {
-            if(action==4&&apps_find((unsigned)id))apps_close((unsigned)id);else hide_window(id);
-        } else if (action == 10 || action == 11) {
+            if(action==4) {
+                if(apps_find((unsigned)id))apps_close((unsigned)id);else windows_close(&wm,(unsigned)id);
+            } else hide_window(id);
+        } else if(action==13) toggle_maximize(id);
+        else if (action == 10 || action == 11) {
+            if(wm.layout[id]!=WINDOW_NORMAL) {
+                arrange_window(id,WINDOW_NORMAL);
+                Rect *restored=window_rect(id);
+                if(action==10) {
+                    restored->x=minimum(x-restored->width/2,(int)canvas.width-restored->width);
+                    restored->y=minimum(y-25,(int)canvas.height-100-restored->height);
+                    if(restored->x<0)restored->x=0;
+                    if(restored->y<0)restored->y=0;
+                    if(id==1)reframe_terminal();
+                }
+            }
             dragging = action == 10 ? id : 0;
             resizing = action == 11 ? id : 0;
             Rect window = *window_rect(id);
             drag_x = x - window.x; drag_y = y - window.y;
         } else if (apps_find((unsigned)id)) apps_click((unsigned)id,*window_rect(id),x,y);
-        else if (id == 2 && hardware_page && y >= system_window.y + 200 && y < system_window.y + 251) {
-            if (x < system_window.x + 120) {
-                volume = volume == 100 ? 50 : volume == 50 ? 0 : 100;
-                platform_audio_volume(volume);
-                settings_volume(volume);
-            } else {
-                platform_audio_start(display); platform_audio_volume(volume);
-            }
-        } else if (id == 2 && !hardware_page) {
-            int region_y = system_window.y + (system_window.height < 420 ? 219 : 345);
-            if (y >= region_y && y < region_y + 48) {
-                settings_zone((settings_current()->zone + 1) % 7); refresh_clock();
-            }
-        }
         scene_dirty = 1;
         return;
     }
     if (target == 1) { menu_open = !menu_open; scene_dirty = 1; return; }
     if (menu_open) { menu_open = 0; scene_dirty = 1; }
     if (target == 2 || target == 5 || target == 7) open_window(1);
-    else if (target == 3 || target == 6 || target == 8) { hardware_page = 0; open_window(2); }
-    else if (target == 9 || target == 10 || target == 11) open_window(3);
+    else if (target == 3 || target == 6 || target == 8) { settings_app_select(0); open_window(2); }
+    else if (target == 9 || target == 10 || target == 11) open_window(APP_FILES);
+    else if (target == 17 || target == 18) open_window(APP_NOTES);
     else if (target == 12) open_window(4);
     else if (target == 15 || target == 16) open_window(APP_CALCULATOR);
     else if (target == 13 || target == 14) {
@@ -507,22 +490,28 @@ _Noreturn void desktop_run(const BootInfo *boot)
     int maximum_height = height - window_top - 116;
     terminal_window = (Rect){0,window_top,minimum(960,width - 96),minimum(560,maximum_height)};
     terminal_window.x = (width - terminal_window.width) / 2;
-    system_window = (Rect){0,window_top,minimum(690,width - 96),minimum(480,maximum_height)};
+    int settings_top=height<720?24:window_top;
+    system_window = (Rect){0,settings_top,minimum(820,width - 48),minimum(560,height-settings_top-108)};
     system_window.x = (width - system_window.width) / 2;
-    files_window = (Rect){0,window_top,minimum(960,width - 96),minimum(560,maximum_height)};
+    notes_window = (Rect){0,window_top,minimum(860,width - 96),minimum(520,maximum_height)};
+    notes_window.x=(width-notes_window.width)/2;
+    files_window = (Rect){0,window_top,minimum(1000,width - 64),minimum(600,maximum_height)};
     files_window.x = (width - files_window.width) / 2;
     about_window = (Rect){(width - 580) / 2,window_top,580,minimum(390,maximum_height)};
     calculator_window=(Rect){(width-400)/2,window_top,400,minimum(540,maximum_height)};
-    for(unsigned id=1;id<=5;++id)windows_register(&wm,id,wm.rect[id]);
+    for(unsigned id=1;id<=6;++id)windows_register(&wm,id,wm.rect[id]);
     apps_initialize(&wm);
-    dock = (Rect){(width - 352) / 2,height - 96,352,76};
+    work_area=(Rect){12,96,width-24,height-204};
+    dock = (Rect){(width - 488) / 2,height - 96,488,76};
     brand_button = (Rect){dock.x + 13,dock.y + 10,50,50};
     terminal_button = (Rect){dock.x + 81,dock.y + 10,50,50};
     system_button = (Rect){dock.x + 149,dock.y + 10,50,50};
     files_button = (Rect){dock.x + 217,dock.y + 10,50,50};
     calculator_button=(Rect){dock.x+285,dock.y+10,50,50};
+    about_button=(Rect){dock.x+353,dock.y+10,50,50};
+    notes_button=(Rect){dock.x+421,dock.y+10,50,50};
     clock_panel = (Rect){width - 254,24,226,64};
-    menu = (Rect){dock.x,dock.y - 355,242,340};
+    menu = (Rect){dock.x,dock.y - 395,242,380};
     power_panel = (Rect){(width - 520) / 2,(height - 240) / 2,520,240};
     platform_network_initialize();
     if (!platform_input_initialize(boot->width,boot->height)) {
@@ -536,7 +525,13 @@ _Noreturn void desktop_run(const BootInfo *boot)
     refresh_clock(); scene(); present((Rect){0,0,width,height}); draw_pointer();
     serial_write(platform_pointer_available() ? "DESKTOP: modern UI ready / pointer enabled\r\n" : "DESKTOP: modern UI ready / keyboard shortcuts\r\n");
     unsigned ticks = 0;
+    unsigned last_theme=settings_current()->theme,last_zone=settings_current()->zone;
     for (;;) {
+        if(wallpaper_style!=(int)settings_current()->wallpaper){wallpaper_style=(int)settings_current()->wallpaper;create_wallpaper();scene_dirty=1;}
+        if(volume!=settings_current()->volume){volume=settings_current()->volume;platform_audio_volume(volume);scene_dirty=1;}
+        if(last_theme!=settings_current()->theme){last_theme=settings_current()->theme;scene_dirty=1;}
+        if(last_zone!=settings_current()->zone){last_zone=settings_current()->zone;refresh_clock();scene_dirty=1;}
+        apps_tick();
         platform_network_poll();
         PlatformPointer old_pointer = pointer;
         int terminal_dirty = 0, clock_dirty = 0;
@@ -547,15 +542,27 @@ _Noreturn void desktop_run(const BootInfo *boot)
                 else if (key == '\n') confirm_power();
                 continue;
             }
+            if(key==DESKTOP_SWITCH_END) {windows_cycle_end(&wm);continue;}
+            if(key==DESKTOP_NEXT||key==DESKTOP_PREVIOUS) {
+                windows_cycle(&wm,key==DESKTOP_PREVIOUS);menu_open=context_open=dragging=resizing=0;scene_dirty=1;continue;
+            }
+            if(key==DESKTOP_MAXIMIZE||key==DESKTOP_LEFT||key==DESKTOP_RIGHT||key==DESKTOP_RESTORE||key==DESKTOP_MINIMIZE) {
+                dragging=resizing=0;
+                if(key==DESKTOP_MAXIMIZE)toggle_maximize(active_window);
+                else if(key==DESKTOP_MINIMIZE){hide_window(active_window);scene_dirty=1;}
+                else arrange_window(active_window,key==DESKTOP_LEFT?WINDOW_LEFT:key==DESKTOP_RIGHT?WINDOW_RIGHT:WINDOW_NORMAL);
+                continue;
+            }
             if (key == 17) { menu_open = !menu_open; context_open = 0; scene_dirty = 1; continue; }
             if (menu_open && (key == 'r' || key == 'R' || key == 's' || key == 'S')) {
                 power_dialog = (key == 'r' || key == 'R') ? 2 : 1;
                 power_error = 0; menu_open = dragging = resizing = 0; scene_dirty = 1; continue;
             }
             if (key == 1) open_window(1);
-            else if (key == 2) { hardware_page = 0; open_window(2); }
-            else if (key == 3) { hardware_page = 1; open_window(2); }
-            else if (key == 4) open_window(3);
+            else if (key == 2) { settings_app_select(0); open_window(2); }
+            else if (key == 3) { settings_app_select(5); open_window(2); }
+            else if (key == 4) open_window(APP_FILES);
+            else if (key == 30) open_window(APP_NOTES);
             else if (key == 5) open_window(4);
             else if (key == 20) open_window(APP_CALCULATOR);
             else if (key == 6 && active_window == APP_NOTES) { apps_key(APP_NOTES,key); scene_dirty = 1; }
@@ -563,7 +570,7 @@ _Noreturn void desktop_run(const BootInfo *boot)
                 if(apps_escape((unsigned)active_window)){scene_dirty=1;continue;}
                 if (context_open || menu_open) context_open = menu_open = 0;
                 else if (active_window) {
-                    if(apps_find((unsigned)active_window))apps_close((unsigned)active_window);else hide_window(active_window);
+                    if(apps_find((unsigned)active_window))apps_close((unsigned)active_window);else windows_close(&wm,(unsigned)active_window);
                 }
                 scene_dirty = 1;
             }
@@ -577,8 +584,16 @@ _Noreturn void desktop_run(const BootInfo *boot)
                 context_open = 1; menu_open = 0; scene_dirty = 1;
                 serial_write("DESKTOP: context menu opened\r\n");
             }
+            if(!power_dialog&&(event.buttons&2)&&!(pointer.buttons&2)){int target=target_at(event.x,event.y);if(target>=100)focus(target/100);}
             if ((event.buttons & 1) && !(pointer.buttons & 1)) click(event.x,event.y);
-            if (!(event.buttons & 1)) dragging = resizing = 0;
+            if (!(event.buttons & 1)) {
+                if(dragging && (pointer.buttons&1)) {
+                    if(event.y<=12)arrange_window(dragging,WINDOW_MAXIMIZED);
+                    else if(event.x<=12)arrange_window(dragging,WINDOW_LEFT);
+                    else if(event.x>=width-13)arrange_window(dragging,WINDOW_RIGHT);
+                }
+                dragging = resizing = 0;
+            }
             if ((dragging || resizing) && (event.buttons & 1)) {
                 int id = dragging ? dragging : resizing;
                 Rect *window = window_rect(id);
@@ -604,7 +619,7 @@ _Noreturn void desktop_run(const BootInfo *boot)
             }
             if(apps_find((unsigned)active_window)&&!power_dialog&&!dragging&&!resizing){
                 apps_pointer((unsigned)active_window,*window_rect(active_window),event.x,event.y,event.buttons);
-                if(event.buttons&1)scene_dirty=1;
+                if(event.buttons&3)scene_dirty=1;
             }
             pointer = event;
         }

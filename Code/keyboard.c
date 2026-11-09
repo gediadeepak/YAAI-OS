@@ -2,12 +2,13 @@
 #include "keyboard.h"
 #include "ps2.h"
 #include "edit_keys.h"
+#include "desktop_keys.h"
 
-static uint8_t shifts, caps_lock, extended, pause_bytes, controls;
+static uint8_t shifts, caps_lock, extended, pause_bytes, controls, alts;
 
 int keyboard_initialize(void)
 {
-    shifts = caps_lock = extended = pause_bytes = controls = 0;
+    shifts = caps_lock = extended = pause_bytes = controls = alts = 0;
     return ps2_initialize();
 }
 char keyboard_read(void)
@@ -37,6 +38,16 @@ char keyboard_read(void)
         if(code & 0x80) controls &= (uint8_t)~mask; else controls |= mask;
         return 0;
     }
+    if ((code & 0x7f) == 0x38) {
+        unsigned mask=is_extended?2:1;
+        if(code&0x80) {alts &= (uint8_t)~mask;return alts?0:DESKTOP_SWITCH_END;}
+        alts |= (uint8_t)mask;return 0;
+    }
+    if(alts && !(code&0x80)) {
+        unsigned nav=is_extended?(code==0x4b?105:code==0x4d?106:code==0x50?108:0):code;
+        char action=desktop_shortcut(nav,shifts);
+        if(action)return action;
+    }
     if (is_extended) {
         unsigned key = code==0x4b?EDIT_LEFT:code==0x4d?EDIT_RIGHT:code==0x48?EDIT_UP:code==0x50?EDIT_DOWN:
             code==0x47?EDIT_HOME:code==0x4f?EDIT_END:code==0x49?EDIT_PAGE_UP:code==0x51?EDIT_PAGE_DOWN:code==0x53?EDIT_DELETE:0;
@@ -59,6 +70,7 @@ char keyboard_read(void)
     if (code == 0x42) return 18; // F8: Files actions.
     if (code == 0x43) return 19; // F9: New folder.
     if (code == 0x44) return 17; // F10 opens the desktop menu.
+    if (code == 0x58) return 30; // F12 launches Notes.
     if (code == 0x57) return 20; // F11 launches Calculator.
     if (code >= sizeof(normal)) return 0;
     char character = normal[code];

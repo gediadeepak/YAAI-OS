@@ -1,6 +1,7 @@
 #include "../input_events.h"
 #include <limits.h>
 #include "../edit_keys.h"
+#include "../desktop_keys.h"
 #define CHECK(value) do { if (!(value)) return __LINE__; } while (0)
 static void key(unsigned code, int value) { input_events_feed(1,(uint16_t)code,value); }
 static void sync(void) { input_events_feed(0,0,0); }
@@ -16,6 +17,7 @@ int input_events_test(void)
     key(42,0); key(59,1); key(60,1); key(61,1);
     CHECK(input_events_key_read() == 1 && input_events_key_read() == 2 && input_events_key_read() == 3);
     key(68,1); CHECK(input_events_key_read() == 17);
+    key(88,1); CHECK(input_events_key_read() == 30);
     key(62,1); key(64,1); key(65,1); key(15,1);
     CHECK(input_events_key_read() == 4 && input_events_key_read() == 6 && input_events_key_read() == 7 && input_events_key_read() == '\t');
     key(28,1); key(14,1); key(1,1); key(96,1);
@@ -29,6 +31,17 @@ int input_events_test(void)
     CHECK((unsigned char)input_events_key_read()==EDIT_PASTE);
     CHECK((unsigned char)input_events_key_read()==EDIT_UNDO);
     CHECK((unsigned char)input_events_key_read()==EDIT_REDO);
+    key(56,1);key(15,1);key(15,2);key(42,1);key(15,1);key(42,0);
+    key(105,1);key(106,1);key(108,1);key(68,1);key(67,1);key(56,0);
+    CHECK(input_events_key_read()==DESKTOP_NEXT && input_events_key_read()==DESKTOP_NEXT);
+    CHECK(input_events_key_read()==DESKTOP_PREVIOUS);
+    CHECK(input_events_key_read()==DESKTOP_LEFT && input_events_key_read()==DESKTOP_RIGHT);
+    CHECK(input_events_key_read()==DESKTOP_RESTORE && input_events_key_read()==DESKTOP_MAXIMIZE);
+    CHECK(input_events_key_read()==DESKTOP_MINIMIZE && input_events_key_read()==DESKTOP_SWITCH_END);
+    key(100,1);key(56,1);key(100,0);CHECK(!input_events_key_read());
+    key(56,0);CHECK(input_events_key_read()==DESKTOP_SWITCH_END);
+    key(15,1);CHECK(input_events_key_read()=='\t');
+
     input_events_feed(3,0,32767); input_events_feed(3,1,0);
     CHECK(!input_events_pointer_read(&event)); sync();
     CHECK(input_events_pointer_read(&event) && event.x == 799 && event.y == 0 && !event.buttons);

@@ -1,10 +1,11 @@
 #include "input_events.h"
 #include <limits.h>
 #include "edit_keys.h"
+#include "desktop_keys.h"
 enum { CAPACITY = 128 };
 static char keys[CAPACITY];
 static PlatformPointer pointers[CAPACITY], pointer;
-static unsigned key_head, key_tail, pointer_head, pointer_tail, shifts, caps, controls;
+static unsigned key_head, key_tail, pointer_head, pointer_tail, shifts, caps, controls, alts;
 static int width, height, changed, dropped;
 static int32_t axis_min[2], axis_max[2];
 
@@ -12,7 +13,7 @@ void input_events_initialize(unsigned w, unsigned h)
 {
     width = w && w <= INT_MAX ? (int)w : 1;
     height = h && h <= INT_MAX ? (int)h : 1;
-    key_head = key_tail = pointer_head = pointer_tail = shifts = caps = controls = 0;
+    key_head = key_tail = pointer_head = pointer_tail = shifts = caps = controls = alts = 0;
     changed = dropped = 0;
     pointer = (PlatformPointer){width / 2,height / 2,0};
     axis_min[0] = axis_min[1] = 0; axis_max[0] = axis_max[1] = 32767;
@@ -47,22 +48,32 @@ static void character(unsigned code, int32_t value)
     }
     if (code == 58) { if (value == 1) caps ^= 1; return; }
     if(code==29||code==97){unsigned mask=code==29?1:2;if(value)controls|=mask;else controls&=~mask;return;}
+    if(code==56||code==100) {
+        unsigned mask=code==56?1:2;
+        if(value) alts|=mask;else {
+            alts&=~mask;
+            unsigned next=(key_tail+1)%CAPACITY;
+            if(!alts&&next!=key_head){keys[key_tail]=DESKTOP_SWITCH_END;key_tail=next;}
+        }
+        return;
+    }
     if (!value) return;
     char key = code < 58 ? (shifts ? shifted[code] : normal[code]) :
-        code >= 59 && code <= 65 ? (char)(code - 58) : code == 66 ? 18 : code == 67 ? 19 : code == 68 ? 17 : code == 87 ? 20 : code == 96 ? '\n' : 0;
+        code >= 59 && code <= 65 ? (char)(code - 58) : code == 66 ? 18 : code == 67 ? 19 : code == 68 ? 17 : code == 87 ? 20 : code == 88 ? 30 : code == 96 ? '\n' : 0;
     if (code < 58 && normal[code] >= 'a' && normal[code] <= 'z')
         key = (!!shifts ^ caps) ? (char)(normal[code] - 'a' + 'A') : normal[code];
     unsigned navigation=code==105?EDIT_LEFT:code==106?EDIT_RIGHT:code==103?EDIT_UP:code==108?EDIT_DOWN:
         code==102?EDIT_HOME:code==107?EDIT_END:code==104?EDIT_PAGE_UP:code==109?EDIT_PAGE_DOWN:code==111?EDIT_DELETE:0;
     if(navigation)key=(char)(navigation+(shifts&&navigation<=EDIT_PAGE_DOWN?EDIT_SHIFT:0));
     else if(controls&&code<58)key=(char)edit_shortcut(normal[code]);
+    if(alts) {char action=desktop_shortcut(code,shifts);if(action)key=action;}
     unsigned next = (key_tail + 1) % CAPACITY;
     if (key && next != key_head) { keys[key_tail] = key; key_tail = next; }
 }
 void input_events_feed(uint16_t type, uint16_t code, int32_t value)
 {
     if (type == 0 && code == 3) { // SYN_DROPPED: discard partial reports and release held controls.
-        dropped = 1; shifts = controls = 0; pointer.buttons = 0; changed = 1; return;
+        dropped = 1; shifts = controls = alts = 0; keys[key_tail]=DESKTOP_SWITCH_END; key_tail=(key_tail+1)%CAPACITY; if(key_tail==key_head)key_head=(key_head+1)%CAPACITY; pointer.buttons = 0; changed = 1; return;
     }
     if (type == 0 && code == 0) {
         dropped = 0;
