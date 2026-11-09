@@ -52,6 +52,9 @@ static void hide_window(int window)
     windows_hide(&wm,(unsigned)window);
 }
 static Rect work_area;
+static int fullscreen_window(void) {
+    return active_window && visible[active_window] && wm.layout[active_window]==WINDOW_MAXIMIZED;
+}
 static void reframe_terminal(void) {
     if(terminal_started) console_reframe(terminal_window.x+16,terminal_window.y+64,
                                         terminal_window.width-32,terminal_window.height-80);
@@ -60,7 +63,8 @@ static void arrange_window(int id,int layout) {
     if(!id)return;
     const AppDefinition *app=apps_find((unsigned)id);
     int mw=app?app->min_width:id==1?420:544, mh=app?app->min_height:id==1?220:260;
-    if(windows_arrange(&wm,(unsigned)id,layout,work_area,mw,mh)) {
+    Rect area=layout==WINDOW_MAXIMIZED?(Rect){0,0,(int)canvas.width,(int)canvas.height}:work_area;
+    if(windows_arrange(&wm,(unsigned)id,layout,area,mw,mh)) {
         if(id==1)reframe_terminal();
         scene_dirty=1;
         serial_write("DESKTOP: window layout changed\r\n");
@@ -244,9 +248,10 @@ static void draw_dock(void)
 
 static void chrome(int id, Rect window, const char *title)
 {
-    gui_shadow(&canvas,window,20);
-    gui_round_rect(&canvas,window,20,rgb(61,81,103),220);
-    gui_round_rect(&canvas,(Rect){window.x + 1,window.y + 1,window.width - 2,window.height - 2},19,rgb(14,23,39),250);
+    int maximized=wm.layout[id]==WINDOW_MAXIMIZED;
+    if(!maximized)gui_shadow(&canvas,window,20);
+    gui_round_rect(&canvas,window,maximized?0:20,rgb(61,81,103),220);
+    gui_round_rect(&canvas,(Rect){window.x + 1,window.y + 1,window.width - 2,window.height - 2},maximized?0:19,rgb(14,23,39),250);
     label(window.x + 25,window.y + 15,title,GUI_BODY,rgb(218,232,247));
     gui_line(&canvas,window.x + 20,window.y + 51,window.x + window.width - 21,window.y + 51,1,rgb(36,52,73));
     int x = window.x + window.width - 35, y = window.y + 25;
@@ -350,8 +355,7 @@ static void scene(void)
             }
         }
     }
-    clock_widget(1);
-    draw_dock();
+    if(!fullscreen_window()) {clock_widget(1);draw_dock();}
     if (menu_open) {
         gui_shadow(&canvas,menu,20);
         gui_round_rect(&canvas,menu,20,rgb(21,35,54),248);
@@ -440,12 +444,14 @@ static int target_at(int x, int y)
         if (inside((Rect){menu.x + 10,menu.y + 292,menu.width - 20,38},x,y)) return 14;
         return 0;
     }
+    if(!fullscreen_window()) {
     if (inside(brand_button,x,y)) return 1;
     if (inside(terminal_button,x,y)) return 2;
     if (inside(system_button,x,y)) return 3;
     if (inside(files_button,x,y)) return 9;
     if (inside(calculator_button,x,y)) return 15;
     if (inside(about_button,x,y)) return 12;
+    }
     for (int pass = (int)wm.count-1; pass >= 0; --pass) {
         int id = order[pass];
         if (!id || !visible[id]) continue;

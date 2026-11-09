@@ -94,7 +94,7 @@ targets x86-64; this does not enable installation on arbitrary phones.
 
 Capture the VM keyboard before using shortcuts; otherwise the host may handle
 Alt+Tab. Snapping is skipped when half the screen cannot fit the app's minimum
-size. The clock and dock retain their own space above and below arranged windows.
+size. Snapped windows reserve clock and dock space. Maximized windows fill the entire screen and hide the desktop clock and dock until restored or minimized.
 
 ## Validation
 
