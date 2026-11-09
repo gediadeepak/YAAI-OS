@@ -61,13 +61,13 @@ A power loss during that one-time replacement may require booting installer medi
 again; retain the powered-off VDI backup. This is a prototype recovery mechanism,
 not a guarantee against every firmware, filesystem or physical-storage failure.
 
-Window-control changes are on `codex/window-controls`; the installer/app milestones are on `codex/single-disk-app-framework`.
+Settings changes are on `codex/settings-app`; window-control changes are on `codex/window-controls`; the installer/app milestones are on `codex/single-disk-app-framework`.
 Use Git revert on the feature commit to undo a change while keeping history.
 Git does not back up ignored VDIs or documents stored inside them.
 
 ## Desktop applications
 
-Files & Notes and Calculator use a shared application registry, lifecycle callbacks,
+Files & Notes, Calculator and Settings use a shared application registry, lifecycle callbacks,
 window manager and filesystem service table. Apps retain their state while
 minimized. Unsaved notes veto close until saved or explicitly discarded.
 
@@ -79,6 +79,28 @@ These are cooperative built-in apps in the kernel address space. There is no
 process isolation or external executable loader yet. The same app code builds for
 x86-64 PC/UEFI and the ARM64 QEMU virt preview. The installed-disk updater currently
 targets x86-64; this does not enable installation on arbitrary phones.
+
+## Settings
+
+Open **Settings** from the dock, desktop menu, or **F2**. **F3** opens its Devices
+section. The app includes Display, Appearance, Sound, Date & time, About and Devices.
+
+Wallpaper, Ocean/Amber accents, volume, mute and country/time-zone changes apply
+immediately. Resolution choices (Auto, 1024 x 768, 1280 x 720, 1920 x 1080) apply
+on the next boot. Unsupported or rejected modes fall back to the firmware's best
+usable mode. UI scaling remains fixed at 100%; runtime resolution changes and
+manual clock editing are not implemented.
+
+Preferences use checksummed, redundant UEFI-variable records. Keep the VM's
+firmware/NVRAM file to retain preferences when moving the VM; they are not carried
+by the system VDI alone. Existing wallpaper/volume/time-zone records remain
+compatible. The status line reports when changes could not be saved.
+
+Keyboard: Tab cycles sections, 1-6 selects a section, and A-G chooses its displayed
+options in row order. Click controls normally with the pointer. Sound playback
+requires a supported output device. Devices reports actual availability rather
+than enabling unsupported Wi-Fi, SIM or battery hardware.
+
 
 ## Window controls
 
@@ -105,6 +127,6 @@ size. Snapped windows reserve clock and dock space. Maximized windows fill the e
 ```
 
 The VM suites cover memory, input, graphics, storage, documents, app lifecycle,
-Calculator and boot-update fault injection at 128 MiB and 512 MiB. The independent
+Calculator, saved Settings/resolution fallback and boot-update fault injection at 128 MiB and 512 MiB. The independent
 raw-disk verifier compares the complete documents partition, setup settings, GPT,
 boot records and retained original executable.

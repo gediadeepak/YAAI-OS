@@ -2,7 +2,7 @@
 #define YAAI_APPS_H
 #include "files.h"
 #include "window_manager.h"
-enum { APP_NOTES = 3, APP_CALCULATOR = 5 };
+enum { APP_SETTINGS = 2, APP_NOTES = 3, APP_CALCULATOR = 5 };
 typedef struct {
     FileResult (*read)(const char *, void *, unsigned *);
     FileResult (*write)(const char *, const void *, unsigned);
@@ -44,5 +44,5 @@ void apps_key(unsigned id, char key);
 void apps_click(unsigned id, GuiRect window, int x, int y);
 void apps_pointer(unsigned id, GuiRect window, int x, int y, unsigned buttons);
 int apps_escape(unsigned id);
-extern const AppDefinition notes_application, calculator_application;
+extern const AppDefinition notes_application, calculator_application, settings_application;
 #endif

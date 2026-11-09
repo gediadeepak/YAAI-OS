@@ -1,6 +1,6 @@
 #include "apps.h"
 static WindowManager *windows;
-static const AppDefinition *definitions[] = {&notes_application, &calculator_application};
+static const AppDefinition *definitions[] = {&notes_application, &calculator_application, &settings_application};
 static const AppFiles file_services = {files_read,           files_write,   files_read_id, files_write_at,
                                        files_list_directory, files_entry,   files_resolve, files_path,
                                        files_usage,          files_mkdir,   files_rename,  files_move,

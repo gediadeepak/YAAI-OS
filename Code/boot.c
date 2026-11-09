@@ -33,6 +33,7 @@ uint64_t efi_main(void *image_handle, SystemTable *system)
         system->console_out->output_string(system->console_out, u"Graphics unavailable.\r\n");
         return 0x8000000000000003ULL;
     }
+    platform_storage_initialize(&boot);
     display_select_mode(graphics,services);
     if (!graphics->mode || !graphics->mode->info) return 0x8000000000000003ULL;
     GraphicsMode *mode = graphics->mode;
