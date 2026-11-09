@@ -14,6 +14,7 @@
 #include "file_app.h"
 #include "power.h"
 #include "apps.h"
+#include "desktop_keys.h"
 
 
 
@@ -30,7 +31,7 @@ static WindowManager wm;
 #define active_window wm.active
 #define visible wm.visible
 #define order wm.order
-static Rect dock, brand_button, terminal_button, system_button, files_button, calculator_button, clock_panel, menu;
+static Rect dock, brand_button, terminal_button, system_button, files_button, calculator_button, about_button, clock_panel, menu;
 static PlatformPointer pointer;
 static int menu_open, terminal_started, scene_dirty, hovered;
 static int dragging, resizing, drag_x, drag_y, wallpaper_style, hardware_page;
@@ -49,6 +50,24 @@ static void focus(int window)
 static void hide_window(int window)
 {
     windows_hide(&wm,(unsigned)window);
+}
+static Rect work_area;
+static void reframe_terminal(void) {
+    if(terminal_started) console_reframe(terminal_window.x+16,terminal_window.y+64,
+                                        terminal_window.width-32,terminal_window.height-80);
+}
+static void arrange_window(int id,int layout) {
+    if(!id)return;
+    const AppDefinition *app=apps_find((unsigned)id);
+    int mw=app?app->min_width:id==1?420:544, mh=app?app->min_height:id==1?220:260;
+    if(windows_arrange(&wm,(unsigned)id,layout,work_area,mw,mh)) {
+        if(id==1)reframe_terminal();
+        scene_dirty=1;
+        serial_write("DESKTOP: window layout changed\r\n");
+    }
+}
+static void toggle_maximize(int id) {
+    if(id)arrange_window(id,wm.layout[id]==WINDOW_MAXIMIZED?WINDOW_NORMAL:WINDOW_MAXIMIZED);
 }
 static char time_text[9] = "--:--:--", date_text[11] = "----/--/--";
 
@@ -206,9 +225,9 @@ static void draw_dock(void)
 {
     gui_shadow(&canvas,dock,24);
     gui_round_rect(&canvas,dock,24,rgb(19,32,51),235);
-    Rect buttons[5] = {brand_button,terminal_button,system_button,files_button,calculator_button};
-    int targets[5] = {1,2,3,9,15},ids[5]={0,1,2,3,5};
-    for (int index = 0; index < 5; ++index) {
+    Rect buttons[6] = {brand_button,terminal_button,system_button,files_button,calculator_button,about_button};
+    int targets[6] = {1,2,3,9,15,12},ids[6]={0,1,2,3,5,4};
+    for (int index = 0; index < 6; ++index) {
         if (hovered == targets[index] || (index && active_window == ids[index]))
             gui_round_rect(&canvas,buttons[index],15,rgb(50,79,97),hovered == targets[index] ? 220 : 155);
     }
@@ -217,11 +236,13 @@ static void draw_dock(void)
     system_symbol(system_button.x + 5,system_button.y + 7);
     files_symbol(files_button.x + 4,files_button.y + 6);
     calculator_symbol(calculator_button.x+4,calculator_button.y+5);
-    for(unsigned i=1;i<5;++i)if(active_window==ids[i])
-        gui_round_rect(&canvas,(Rect){buttons[i].x+20,buttons[i].y+56,10,3},1,rgb(142,220,213),255);
+    gui_round_rect(&canvas,(Rect){about_button.x+12,about_button.y+8,28,28},14,rgb(75,112,135),255);
+    label(about_button.x+22,about_button.y+12,"i",GUI_BODY,rgb(227,241,249));
+    for(unsigned i=1;i<6;++i)if(wm.opened[ids[i]])
+        gui_round_rect(&canvas,(Rect){buttons[i].x+20,buttons[i].y+56,10,3},1,active_window==ids[i]?rgb(142,220,213):rgb(102,125,145),255);
 }
 
-static void chrome(Rect window, const char *title)
+static void chrome(int id, Rect window, const char *title)
 {
     gui_shadow(&canvas,window,20);
     gui_round_rect(&canvas,window,20,rgb(61,81,103),220);
@@ -229,10 +250,20 @@ static void chrome(Rect window, const char *title)
     label(window.x + 25,window.y + 15,title,GUI_BODY,rgb(218,232,247));
     gui_line(&canvas,window.x + 20,window.y + 51,window.x + window.width - 21,window.y + 51,1,rgb(36,52,73));
     int x = window.x + window.width - 35, y = window.y + 25;
-    gui_round_rect(&canvas,(Rect){x - 12,y - 12,24,24},12,hovered == 4 ? rgb(143,69,78) : rgb(57,47,64),255);
+    gui_round_rect(&canvas,(Rect){x - 12,y - 12,24,24},12,hovered == 100*id+4 ? rgb(143,69,78) : rgb(57,47,64),255);
     gui_line(&canvas,x - 4,y - 4,x + 4,y + 4,1,rgb(236,190,192));
     gui_line(&canvas,x + 4,y - 4,x - 4,y + 4,1,rgb(236,190,192));
-    gui_line(&canvas,x - 46,y + 3,x - 34,y + 3,2,rgb(170,196,215));
+    gui_line(&canvas,x - 82,y + 3,x - 70,y + 3,2,rgb(170,196,215));
+    int bx=x-40;
+    if(hovered==100*id+13)gui_round_rect(&canvas,(Rect){bx-15,y-15,30,30},8,rgb(46,72,92),255);
+    if(wm.layout[id]==WINDOW_MAXIMIZED) {
+        gui_line(&canvas,bx-3,y-6,bx+6,y-6,1,rgb(170,196,215));
+        gui_line(&canvas,bx+6,y-6,bx+6,y+3,1,rgb(170,196,215));
+    }
+    gui_line(&canvas,bx-6,y-3,bx+3,y-3,1,rgb(170,196,215));
+    gui_line(&canvas,bx-6,y-3,bx-6,y+6,1,rgb(170,196,215));
+    gui_line(&canvas,bx+3,y-3,bx+3,y+6,1,rgb(170,196,215));
+    gui_line(&canvas,bx-6,y+6,bx+3,y+6,1,rgb(170,196,215));
     gui_line(&canvas,window.x + window.width - 22,window.y + window.height - 9,
              window.x + window.width - 9,window.y + window.height - 22,2,rgb(106,146,164));
 }
@@ -247,7 +278,7 @@ static void metric_card(Rect card, const char *title, uint64_t value, int compac
 static void system_panel(void)
 {
     Rect window = system_window;
-    chrome(window,hardware_page ? "Devices and sound" : "System overview");
+    chrome(2,window,hardware_page ? "Devices and sound" : "System overview");
     int x = window.x + 24, y = window.y;
     if (hardware_page) {
         PlatformPower power = platform_power();
@@ -302,11 +333,11 @@ static void scene(void)
     for (unsigned pass = 0; pass < wm.count; ++pass) {
         int window = order[pass];
         if (window && visible[window]) {
-            if (window == 1) { chrome(terminal_window,"Terminal"); console_redraw(); }
+            if (window == 1) { chrome(1,terminal_window,"Terminal"); console_redraw(); }
             else if (window == 2) system_panel();
-            else if (apps_find((unsigned)window)) { chrome(*window_rect(window),apps_find((unsigned)window)->title);apps_draw((unsigned)window,&canvas,*window_rect(window)); }
+            else if (apps_find((unsigned)window)) { chrome(window,*window_rect(window),apps_find((unsigned)window)->title);apps_draw((unsigned)window,&canvas,*window_rect(window)); }
             else {
-                chrome(about_window,"About YAAI OS");
+                chrome(4,about_window,"About YAAI OS");
                 int x = about_window.x, y = about_window.y;
                 int compact = about_window.height < 350;
                 if (!compact) brand_symbol(x + about_window.width / 2 - 18,y + 68);
@@ -414,13 +445,15 @@ static int target_at(int x, int y)
     if (inside(system_button,x,y)) return 3;
     if (inside(files_button,x,y)) return 9;
     if (inside(calculator_button,x,y)) return 15;
+    if (inside(about_button,x,y)) return 12;
     for (int pass = (int)wm.count-1; pass >= 0; --pass) {
         int id = order[pass];
         if (!id || !visible[id]) continue;
         Rect window = *window_rect(id);
         if (!inside(window,x,y)) continue;
         if (inside((Rect){window.x + window.width - 53,window.y + 7,36,36},x,y)) return 100 * id + 4;
-        if (inside((Rect){window.x + window.width - 89,window.y + 7,36,36},x,y)) return 100 * id + 9;
+        if (inside((Rect){window.x + window.width - 89,window.y + 7,36,36},x,y)) return 100 * id + 13;
+        if (inside((Rect){window.x + window.width - 125,window.y + 7,36,36},x,y)) return 100 * id + 9;
         if (x >= window.x + window.width - 25 && y >= window.y + window.height - 25) return 100 * id + 11;
         return 100 * id + (y < window.y + 52 ? 10 : 12);
     }
@@ -449,8 +482,22 @@ static void click(int x, int y)
         int id = target / 100, action = target % 100;
         focus(id);
         if (action == 4 || action == 9) {
-            if(action==4&&apps_find((unsigned)id))apps_close((unsigned)id);else hide_window(id);
-        } else if (action == 10 || action == 11) {
+            if(action==4) {
+                if(apps_find((unsigned)id))apps_close((unsigned)id);else windows_close(&wm,(unsigned)id);
+            } else hide_window(id);
+        } else if(action==13) toggle_maximize(id);
+        else if (action == 10 || action == 11) {
+            if(wm.layout[id]!=WINDOW_NORMAL) {
+                arrange_window(id,WINDOW_NORMAL);
+                Rect *restored=window_rect(id);
+                if(action==10) {
+                    restored->x=minimum(x-restored->width/2,(int)canvas.width-restored->width);
+                    restored->y=minimum(y-25,(int)canvas.height-100-restored->height);
+                    if(restored->x<0)restored->x=0;
+                    if(restored->y<0)restored->y=0;
+                    if(id==1)reframe_terminal();
+                }
+            }
             dragging = action == 10 ? id : 0;
             resizing = action == 11 ? id : 0;
             Rect window = *window_rect(id);
@@ -515,12 +562,14 @@ _Noreturn void desktop_run(const BootInfo *boot)
     calculator_window=(Rect){(width-400)/2,window_top,400,minimum(540,maximum_height)};
     for(unsigned id=1;id<=5;++id)windows_register(&wm,id,wm.rect[id]);
     apps_initialize(&wm);
-    dock = (Rect){(width - 352) / 2,height - 96,352,76};
+    work_area=(Rect){12,96,width-24,height-204};
+    dock = (Rect){(width - 420) / 2,height - 96,420,76};
     brand_button = (Rect){dock.x + 13,dock.y + 10,50,50};
     terminal_button = (Rect){dock.x + 81,dock.y + 10,50,50};
     system_button = (Rect){dock.x + 149,dock.y + 10,50,50};
     files_button = (Rect){dock.x + 217,dock.y + 10,50,50};
     calculator_button=(Rect){dock.x+285,dock.y+10,50,50};
+    about_button=(Rect){dock.x+353,dock.y+10,50,50};
     clock_panel = (Rect){width - 254,24,226,64};
     menu = (Rect){dock.x,dock.y - 355,242,340};
     power_panel = (Rect){(width - 520) / 2,(height - 240) / 2,520,240};
@@ -547,6 +596,17 @@ _Noreturn void desktop_run(const BootInfo *boot)
                 else if (key == '\n') confirm_power();
                 continue;
             }
+            if(key==DESKTOP_SWITCH_END) {windows_cycle_end(&wm);continue;}
+            if(key==DESKTOP_NEXT||key==DESKTOP_PREVIOUS) {
+                windows_cycle(&wm,key==DESKTOP_PREVIOUS);menu_open=context_open=dragging=resizing=0;scene_dirty=1;continue;
+            }
+            if(key==DESKTOP_MAXIMIZE||key==DESKTOP_LEFT||key==DESKTOP_RIGHT||key==DESKTOP_RESTORE||key==DESKTOP_MINIMIZE) {
+                dragging=resizing=0;
+                if(key==DESKTOP_MAXIMIZE)toggle_maximize(active_window);
+                else if(key==DESKTOP_MINIMIZE){hide_window(active_window);scene_dirty=1;}
+                else arrange_window(active_window,key==DESKTOP_LEFT?WINDOW_LEFT:key==DESKTOP_RIGHT?WINDOW_RIGHT:WINDOW_NORMAL);
+                continue;
+            }
             if (key == 17) { menu_open = !menu_open; context_open = 0; scene_dirty = 1; continue; }
             if (menu_open && (key == 'r' || key == 'R' || key == 's' || key == 'S')) {
                 power_dialog = (key == 'r' || key == 'R') ? 2 : 1;
@@ -563,7 +623,7 @@ _Noreturn void desktop_run(const BootInfo *boot)
                 if(apps_escape((unsigned)active_window)){scene_dirty=1;continue;}
                 if (context_open || menu_open) context_open = menu_open = 0;
                 else if (active_window) {
-                    if(apps_find((unsigned)active_window))apps_close((unsigned)active_window);else hide_window(active_window);
+                    if(apps_find((unsigned)active_window))apps_close((unsigned)active_window);else windows_close(&wm,(unsigned)active_window);
                 }
                 scene_dirty = 1;
             }
@@ -578,7 +638,14 @@ _Noreturn void desktop_run(const BootInfo *boot)
                 serial_write("DESKTOP: context menu opened\r\n");
             }
             if ((event.buttons & 1) && !(pointer.buttons & 1)) click(event.x,event.y);
-            if (!(event.buttons & 1)) dragging = resizing = 0;
+            if (!(event.buttons & 1)) {
+                if(dragging && (pointer.buttons&1)) {
+                    if(event.y<=12)arrange_window(dragging,WINDOW_MAXIMIZED);
+                    else if(event.x<=12)arrange_window(dragging,WINDOW_LEFT);
+                    else if(event.x>=width-13)arrange_window(dragging,WINDOW_RIGHT);
+                }
+                dragging = resizing = 0;
+            }
             if ((dragging || resizing) && (event.buttons & 1)) {
                 int id = dragging ? dragging : resizing;
                 Rect *window = window_rect(id);

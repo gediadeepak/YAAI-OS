@@ -27,7 +27,7 @@ int apps_close(unsigned id) {
         return 0;
     if (app->close && !app->close())
         return 0;
-    windows_hide(windows, id);
+    windows_close(windows, id);
     return 1;
 }
 void apps_draw(unsigned id, const BootInfo *screen, GuiRect window) {

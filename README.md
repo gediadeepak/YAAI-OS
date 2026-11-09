@@ -61,7 +61,7 @@ A power loss during that one-time replacement may require booting installer medi
 again; retain the powered-off VDI backup. This is a prototype recovery mechanism,
 not a guarantee against every firmware, filesystem or physical-storage failure.
 
-For code rollback, changes are on `codex/single-disk-app-framework`.
+Window-control changes are on `codex/window-controls`; the installer/app milestones are on `codex/single-disk-app-framework`.
 Use Git revert on the feature commit to undo a change while keeping history.
 Git does not back up ignored VDIs or documents stored inside them.
 
@@ -79,6 +79,22 @@ These are cooperative built-in apps in the kernel address space. There is no
 process isolation or external executable loader yet. The same app code builds for
 x86-64 PC/UEFI and the ARM64 QEMU virt preview. The installed-disk updater currently
 targets x86-64; this does not enable installation on arbitrary phones.
+
+## Window controls
+
+- Click the square title-bar button to maximize or restore a window.
+- **Alt+Tab** switches apps; hold Alt and press Tab repeatedly to cycle through all
+  open apps. **Alt+Shift+Tab** cycles backward. Minimized apps are included.
+- **Alt+F10** maximizes/restores, **Alt+F9** minimizes, and **Alt+Down** restores.
+- **Alt+Left / Alt+Right** snaps the active window to the left or right half.
+- Drag a title bar to the left/right screen edge and release to snap, or to the top
+  edge to maximize. Dragging an arranged window restores its normal size.
+- Dock indicators mark open apps. Click an app icon to reopen it after minimizing;
+  its document or Calculator result is retained. About also has a dock icon.
+
+Capture the VM keyboard before using shortcuts; otherwise the host may handle
+Alt+Tab. Snapping is skipped when half the screen cannot fit the app's minimum
+size. The clock and dock retain their own space above and below arranged windows.
 
 ## Validation
 

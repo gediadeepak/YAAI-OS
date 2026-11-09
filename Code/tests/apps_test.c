@@ -67,5 +67,38 @@ int apps_test(void) {
     CHECK(!file_app_has_changes());
     CHECK(apps_close(APP_NOTES) && manager.active == 0 && !manager.visible[APP_NOTES]);
     apps_initialize(0);
+    windows_initialize(&manager);
+    GuiRect original={100,110,600,400}, area={12,96,1896,876};
+    CHECK(windows_register(&manager,1,original));
+    CHECK(windows_register(&manager,2,original));
+    CHECK(windows_register(&manager,3,original));
+    CHECK(!windows_cycle(&manager,0));
+    CHECK(windows_open(&manager,1)&&windows_open(&manager,2)&&windows_open(&manager,3));
+    CHECK(windows_cycle(&manager,0)==2 && windows_cycle(&manager,0)==1);
+    CHECK(windows_cycle(&manager,0)==3 && windows_cycle(&manager,1)==1);
+    windows_cycle_end(&manager);
+    windows_hide(&manager,1);
+    CHECK(manager.opened[1]&&!manager.visible[1]);
+    CHECK(windows_cycle(&manager,1)==1&&manager.visible[1]);
+    windows_close(&manager,2);
+    CHECK(!manager.opened[2]);
+    CHECK(windows_arrange(&manager,1,WINDOW_MAXIMIZED,area,420,220));
+    CHECK(manager.rect[1].width==1896 && manager.restore[1].width==600);
+    CHECK(windows_arrange(&manager,1,WINDOW_LEFT,area,420,220));
+    CHECK(manager.rect[1].width==944 && manager.restore[1].x==100);
+    CHECK(windows_arrange(&manager,1,WINDOW_RIGHT,area,420,220));
+    CHECK(manager.rect[1].x==964 && manager.rect[1].width==944);
+    CHECK(windows_arrange(&manager,1,WINDOW_NORMAL,area,420,220));
+    CHECK(manager.rect[1].x==100&&manager.rect[1].height==400);
+    CHECK(!windows_arrange(&manager,1,WINDOW_LEFT,(GuiRect){0,0,800,600},544,340));
+    CHECK(manager.layout[1]==WINDOW_NORMAL&&manager.rect[1].width==600);
+    CHECK(windows_arrange(&manager,1,WINDOW_MAXIMIZED,area,420,220));
+    windows_hide(&manager,1);
+    CHECK(manager.layout[1]==WINDOW_MAXIMIZED);
+    CHECK(!windows_arrange(&manager,1,WINDOW_LEFT,area,420,220));
+    CHECK(windows_open(&manager,1));
+    windows_close(&manager,1);
+    CHECK(manager.layout[1]==WINDOW_NORMAL&&manager.rect[1].width==600&&!manager.opened[1]);
+
     return 0;
 }
