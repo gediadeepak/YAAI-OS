@@ -45,6 +45,49 @@ Back up the powered-off system VDI, attach the new installer alongside it, selec
 Update installed YAAI OS, then shut down and detach the installer again. Do not
 replace the existing system disk with a new blank one.
 
+## UEFI ISO and Hyper-V
+
+Create a bootable optical disc image with no extra ISO-authoring tools:
+
+```powershell
+.\export_iso.ps1
+```
+
+The exporter builds the current x86-64 EFI executable, embeds it in a 16 MiB
+FAT16 EFI System Partition, and writes an ISO9660 image with an EFI El Torito boot
+catalog. Font license notices are included inside the boot image and on the disc.
+Generated ISOs are ignored by Git. Existing output files are never overwritten.
+
+UEFI DVD boot and the live desktop have been verified in QEMU. This is UEFI-only
+media; it does not add a legacy BIOS loader. The default installer/live menu is
+the same as on the VDI media. Choose Try without installing to preview the OS.
+
+For a Hyper-V compatibility test, use Generation 2, disable Secure Boot, allocate
+at least 512 MiB fixed startup memory, attach the ISO to a virtual DVD drive, and
+put DVD first in firmware boot order. Generation 1 cannot boot this UEFI image.
+
+**Hyper-V is not yet a supported interactive runtime.** The current kernel has
+PS/2/VirtualBox input and legacy ATA storage drivers, and lacks the synthetic
+keyboard, mouse and VMBus/SCSI storage drivers needed by Generation 2. It may
+reach the firmware installer, but the normal desktop cannot be used reliably
+and a persistent VHDX installation is not supported. ISO packaging alone does
+not solve device support. Continue using VirtualBox/QEMU for the working OS.
+Hyper-V runtime testing also needs host administrator/Hyper-V permissions.
+
+Microsoft generation comparison:
+https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/plan/should-i-create-a-generation-1-or-2-virtual-machine-in-hyper-v
+
+```powershell
+.\tests\iso_export_test.ps1
+.\tests\verify_iso.ps1 -IsoPath <iso> -ExpectedImagePath <matching-BOOTX64.EFI>
+```
+
+The exporter checks ISO metadata, the EFI boot catalog checksum, FAT chains,
+both FAT copies and the exact EFI payload hash. The regression script rejects
+corrupted catalogs/payloads, non-x86-64 EFI applications and overwriting an
+existing output.
+
+
 ## Rollback
 
 After an update, press **R** during the two-second YAAI boot prompt to boot the
