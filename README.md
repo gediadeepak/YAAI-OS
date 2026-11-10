@@ -104,7 +104,7 @@ A power loss during that one-time replacement may require booting installer medi
 again; retain the powered-off VDI backup. This is a prototype recovery mechanism,
 not a guarantee against every firmware, filesystem or physical-storage failure.
 
-The searchable icon dock and launcher are on `codex/dock-launcher`; appearance modes are on `codex/settings-color-modes`; the Settings dashboard is on `codex/settings-dashboard`; the file-manager split is on `codex/file-manager`; Settings changes are on `codex/settings-app`; window-control changes are on `codex/window-controls`; the installer/app milestones are on `codex/single-disk-app-framework`.
+Quick Settings is on `codex/quick-settings`; the searchable icon dock and launcher are on `codex/dock-launcher`; appearance modes are on `codex/settings-color-modes`; the Settings dashboard is on `codex/settings-dashboard`; the file-manager split is on `codex/file-manager`; Settings changes are on `codex/settings-app`; window-control changes are on `codex/window-controls`; the installer/app milestones are on `codex/single-disk-app-framework`.
 Use Git revert on the feature commit to undo a change while keeping history.
 Git does not back up ignored VDIs or documents stored inside them.
 
@@ -243,3 +243,26 @@ and blank system VDI pair for each completed update. Remove the old YAAI/SHR.I V
 registrations and obsolete generated build media after testing, keeping the latest
 pair and screenshots. Scope cleanup to project-generated files in Code/build;
 never remove source code or unrelated virtual machines.
+## Quick Settings
+
+Click the desktop clock or press **Alt+Q** to open Quick Settings, including over
+maximized apps. Escape or a click outside closes it. Tab and arrow keys navigate;
+Enter activates the focused control. The panel consumes input so typing does not
+reach an app underneath. F10 switches to the app launcher.
+
+Volume and mute use the native audio backend. Dragging previews hardware volume,
+and releasing saves it; Escape cancels an unfinished drag. Focus the slider and
+use Left/Right for 5% steps. M toggles mute. Audio controls report unavailable on
+unsupported hardware. System/Light/Dark changes apply immediately and are saved.
+Network and IP information come from the platform backend; Wi-Fi is not exposed
+as a pretend working radio in a VM.
+
+The calendar uses the configured local time zone, highlights today, supports
+previous/next month, and returns to today when the month title is selected. Its
+leap-year rules include century exceptions. Restart and Shut down open the existing
+save/flush confirmation dialog. Settings opens the full Settings dashboard.
+
+Controls have hit areas at least 44 pixels high. The shared native panel uses
+stacked portrait and two-column landscape layouts, tested from 360x640 through
+1920x1080. This is UI preparation for a mobile port, not phone boot or touchscreen
+driver support. A physical phone still needs a compatible hardware backend.

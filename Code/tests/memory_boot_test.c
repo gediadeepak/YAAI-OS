@@ -12,6 +12,7 @@ int storage_test(void);
 int settings_test(void);
 int settings_ui_test(void);
 int launcher_test(void);
+int quick_settings_test(void);
 int display_mode_test(void);
 int files_test(void);
 int volumes_test(void);
@@ -67,7 +68,7 @@ _Noreturn void memory_probe_main(const BootInfo *boot)
         else { console_write("STORAGE TEST FAILED AT LINE "); console_decimal((uint64_t)result); console_write("\n"); }
     }
     if (!result) {
-        result = settings_test(); if (!result) result = settings_ui_test(); if (!result) result = launcher_test(); if (!result) result = display_mode_test();
+        result = settings_test(); if (!result) result = settings_ui_test(); if (!result) result = launcher_test(); if (!result) result = quick_settings_test(); if (!result) result = display_mode_test();
         if (!result) console_write("DISPLAY MODE TESTS PASSED\n");
         else { console_write("DISPLAY MODE TEST FAILED AT LINE "); console_decimal((uint64_t)result); console_write("\n"); }
     }

@@ -17,6 +17,7 @@
 #include "desktop_keys.h"
 #include "settings_app.h"
 #include "shell_ui.h"
+#include "quick_settings.h"
 
 
 
@@ -38,6 +39,10 @@ static Rect dock, brand_button, terminal_button, system_button, files_button, ca
 static PlatformPointer pointer;
 static ShellLauncher launcher;
 static uint64_t hover_since;
+static QuickSettings quick;
+static Rect quick_panel;
+static int quick_open;
+static void close_quick(void){quick_settings_cancel(&quick);quick_open=0;}
 static int menu_open, terminal_started, scene_dirty, hovered;
 static int dragging, resizing, drag_x, drag_y, wallpaper_style;
 static unsigned volume = 100;
@@ -198,7 +203,7 @@ static void draw_dock(void)
             int w=selected?18:4;
             gui_round_rect(&canvas,(Rect){buttons[i].x+(56-w)/2,dock.y+73,w,3},1,selected?p.accent:p.muted,255);
         }
-        if(!menu_open&&!context_open&&!power_dialog&&hovered==targets[i]&&apps_ticks()-hover_since>=12)
+        if(!quick_open&&!menu_open&&!context_open&&!power_dialog&&hovered==targets[i]&&apps_ticks()-hover_since>=12)
             shell_tooltip(&canvas,buttons[i],names[i]);
     }
 }
@@ -269,6 +274,7 @@ static void scene(void)
             label(context_menu.x + 16,context_menu.y + 15 + index * 36,items[index],GUI_SMALL,palette.text);
         }
     }
+    if(quick_open){QuickInfo info=quick_settings_info();quick_settings_draw(&canvas,&quick,&info,quick_panel);}
     if (power_dialog) {
         Rect p = power_panel;
         gui_round_rect(&canvas,(Rect){0,0,(int)canvas.width,(int)canvas.height},0,rgb(3,8,16),150);
@@ -292,6 +298,7 @@ static void confirm_power(void)
 
 static void open_window(int window)
 {
+    close_quick();
     if(apps_find((unsigned)window))apps_launch((unsigned)window);
     else windows_open(&wm,(unsigned)window);
     const AppDefinition *opened=apps_find((unsigned)window);
@@ -315,12 +322,14 @@ static int target_at(int x, int y)
         if (inside((Rect){power_panel.x + power_panel.width - 196,power_panel.y + 168,172,40},x,y)) return 32;
         return 30;
     }
+    if(quick_open&&inside(quick_panel,x,y))return 48;
     if (context_open && inside(context_menu,x,y)) {
         int item = (y - context_menu.y - 6) / 36;
         return item >= 0 && item < 4 ? 20 + item : 0;
     }
     if(menu_open&&inside(menu,x,y))return shell_launcher_hit(&launcher,menu,x,y);
     if(!fullscreen_window()) {
+    if (inside(clock_panel,x,y)) return 49;
     if (inside(brand_button,x,y)) return 1;
     if (inside(terminal_button,x,y)) return 2;
     if (inside(system_button,x,y)) return 3;
@@ -345,7 +354,7 @@ static int target_at(int x, int y)
 
 static void activate_shell_target(int target)
 {
-    menu_open=context_open=0;scene_dirty=1;
+    close_quick();menu_open=context_open=0;scene_dirty=1;
     if(target==2)open_window(1);
     else if(target==3){settings_app_select(6);open_window(2);}
     else if(target==SHELL_DEVICES){settings_app_select(5);open_window(2);}
@@ -357,9 +366,21 @@ static void activate_shell_target(int target)
 }
 static void toggle_launcher(void)
 {
-    menu_open=!menu_open;
+    close_quick();menu_open=!menu_open;
     if(menu_open)shell_launcher_init(&launcher);
     context_open=dragging=resizing=0;scene_dirty=1;
+}
+static void toggle_quick(void)
+{
+    if(quick_open)close_quick();
+    else {QuickInfo info=quick_settings_info();quick_settings_open(&quick,&info);quick_open=1;}
+    menu_open=context_open=dragging=resizing=0;scene_dirty=1;
+}
+static void quick_action(int action)
+{
+    if(action==QUICK_CLOSE)close_quick();
+    else if(action)activate_shell_target(action);
+    scene_dirty=1;
 }
 static void click(int x, int y)
 {
@@ -367,6 +388,12 @@ static void click(int x, int y)
     if (power_dialog) {
         if (target == 31) { power_dialog = 0; power_error = 0; scene_dirty = 1; }
         else if (target == 32) confirm_power();
+        return;
+    }
+    if(target==49){toggle_quick();return;}
+    if(quick_open){
+        if(inside(quick_panel,x,y)){QuickInfo info=quick_settings_info();quick_action(quick_settings_click(&quick,quick_panel,&info,x,y));}
+        else {close_quick();scene_dirty=1;}
         return;
     }
     if(menu_open&&inside(menu,x,y)) {
@@ -453,6 +480,7 @@ _Noreturn void desktop_run(const BootInfo *boot)
     calculator_button=(Rect){dock.x+336,dock.y+10,56,56};
     about_button=(Rect){dock.x+400,dock.y+10,56,56};
     clock_panel=(Rect){width-254,24,226,64};
+    quick_panel=quick_settings_bounds((unsigned)width,(unsigned)height);
     menu=shell_launcher_bounds((unsigned)width,(unsigned)height,dock);
     shell_launcher_init(&launcher);
     power_panel = (Rect){(width - 520) / 2,(height - 240) / 2,520,240};
@@ -486,18 +514,20 @@ _Noreturn void desktop_run(const BootInfo *boot)
                 else if (key == '\n') confirm_power();
                 continue;
             }
+            if(key==DESKTOP_QUICK){toggle_quick();continue;}
             if(key==DESKTOP_SWITCH_END) {windows_cycle_end(&wm);continue;}
             if(key==DESKTOP_NEXT||key==DESKTOP_PREVIOUS) {
-                windows_cycle(&wm,key==DESKTOP_PREVIOUS);menu_open=context_open=dragging=resizing=0;scene_dirty=1;continue;
+                close_quick();windows_cycle(&wm,key==DESKTOP_PREVIOUS);menu_open=context_open=dragging=resizing=0;scene_dirty=1;continue;
             }
             if(key==DESKTOP_MAXIMIZE||key==DESKTOP_LEFT||key==DESKTOP_RIGHT||key==DESKTOP_RESTORE||key==DESKTOP_MINIMIZE) {
-                dragging=resizing=0;
+                close_quick();dragging=resizing=0;
                 if(key==DESKTOP_MAXIMIZE)toggle_maximize(active_window);
                 else if(key==DESKTOP_MINIMIZE){hide_window(active_window);scene_dirty=1;}
                 else arrange_window(active_window,key==DESKTOP_LEFT?WINDOW_LEFT:key==DESKTOP_RIGHT?WINDOW_RIGHT:WINDOW_NORMAL);
                 continue;
             }
             if(key==17){toggle_launcher();continue;}
+            if(quick_open){QuickInfo info=quick_settings_info();quick_action(quick_settings_key(&quick,&info,key));continue;}
             if(menu_open){
                 int action=shell_launcher_key(&launcher,key);
                 if(action==SHELL_CLOSE)menu_open=0;
@@ -525,13 +555,15 @@ _Noreturn void desktop_run(const BootInfo *boot)
         }
         PlatformPointer event;
         for (unsigned count = 0; count < 64 && platform_pointer_read(&event); ++count) {
-            if (!menu_open && !power_dialog && (event.buttons & 2) && !(pointer.buttons & 2) && target_at(event.x,event.y) < 100) {
+            int popup_pointer=quick_open;
+            if (!quick_open && !menu_open && !power_dialog && (event.buttons & 2) && !(pointer.buttons & 2) && target_at(event.x,event.y) < 100) {
                 context_menu = (Rect){minimum(event.x,width - 258),minimum(event.y,height - 158),250,156};
                 context_open = 1; menu_open = 0; scene_dirty = 1;
                 serial_write("DESKTOP: context menu opened\r\n");
             }
-            if(!power_dialog&&(event.buttons&2)&&!(pointer.buttons&2)){int target=target_at(event.x,event.y);if(target>=100)focus(target/100);}
+            if(!quick_open&&!power_dialog&&(event.buttons&2)&&!(pointer.buttons&2)){int target=target_at(event.x,event.y);if(target>=100)focus(target/100);}
             if ((event.buttons & 1) && !(pointer.buttons & 1)) click(event.x,event.y);
+            if(quick_open){QuickInfo info=quick_settings_info();if(quick_settings_pointer(&quick,quick_panel,&info,event.x,event.y,event.buttons))scene_dirty=1;}
             if (!(event.buttons & 1)) {
                 if(dragging && (pointer.buttons&1)) {
                     if(event.y<=12)arrange_window(dragging,WINDOW_MAXIMIZED);
@@ -563,7 +595,7 @@ _Noreturn void desktop_run(const BootInfo *boot)
                 if (id == 1) console_reframe(window->x + 16,window->y + 64,window->width - 32,window->height - 80);
                 scene_dirty = 1;
             }
-            if(apps_find((unsigned)active_window)&&!menu_open&&!power_dialog&&!dragging&&!resizing){
+            if(apps_find((unsigned)active_window)&&!popup_pointer&&!quick_open&&!menu_open&&!power_dialog&&!dragging&&!resizing){
                 apps_pointer((unsigned)active_window,*window_rect(active_window),event.x,event.y,event.buttons);
                 if(event.buttons&3)scene_dirty=1;
             }
