@@ -2,7 +2,7 @@
 #define YAAI_SETTINGS_H
 #include "boot_info.h"
 typedef struct {
-    unsigned wallpaper, volume, zone, theme, resolution;
+    unsigned wallpaper, volume, zone, theme, resolution, color_mode;
 } DesktopSettings;
 void settings_initialize(const BootInfo *boot);
 const DesktopSettings *settings_current(void);
@@ -12,4 +12,7 @@ void settings_volume(unsigned value);
 void settings_zone(unsigned value);
 void settings_theme(unsigned value);
 void settings_resolution(unsigned value);
+enum { COLOR_SYSTEM, COLOR_LIGHT, COLOR_DARK };
+void settings_color_mode(unsigned value);
+int settings_dark(void);
 #endif

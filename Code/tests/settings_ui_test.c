@@ -1,5 +1,6 @@
 #include "../apps.h"
 #include "../edit_keys.h"
+#include "../settings.h"
 #include "../settings_app.h"
 #define CHECK(x)                                                                                             \
     do {                                                                                                     \
@@ -61,6 +62,29 @@ int settings_ui_test(void) {
         settings_application.key(*query++);
     settings_application.key('\n');
     CHECK(settings_app_page() == 2);
+    settings_color_mode(COLOR_LIGHT);
+    settings_app_select(6);
+    settings_application.draw(&canvas, w);
+    uint32_t light = pixels[1 + 120 * 640 + 500];
+    settings_app_select(1);
+    settings_application.draw(&canvas, w);
+    settings_application.click(w, 530, 424);
+    CHECK(settings_current()->color_mode == COLOR_DARK && settings_dark());
+    settings_application.draw(&canvas, w);
+    uint32_t dark = pixels[1 + 120 * 640 + 500];
+    CHECK(dark != light);
+    settings_color_mode(COLOR_SYSTEM);
+    settings_application.draw(&canvas, w);
+    CHECK(pixels[1 + 120 * 640 + 500] == dark);
+    settings_application.key('i');
+    CHECK(!settings_dark());
+    settings_application.key('h');
+    CHECK(settings_current()->color_mode == COLOR_SYSTEM);
+    settings_application.key('j');
+    CHECK(settings_current()->color_mode == COLOR_DARK);
+    CHECK(pixels[0] == 0x12345678 && pixels[640 * 480 + 1] == 0xabcdef01);
+    settings_color_mode(COLOR_LIGHT);
+
     settings_app_select(6);
     return 0;
 }

@@ -104,7 +104,7 @@ A power loss during that one-time replacement may require booting installer medi
 again; retain the powered-off VDI backup. This is a prototype recovery mechanism,
 not a guarantee against every firmware, filesystem or physical-storage failure.
 
-The Settings dashboard is on `codex/settings-dashboard`; the file-manager split is on `codex/file-manager`; Settings changes are on `codex/settings-app`; window-control changes are on `codex/window-controls`; the installer/app milestones are on `codex/single-disk-app-framework`.
+Appearance modes are on `codex/settings-color-modes`; the Settings dashboard is on `codex/settings-dashboard`; the file-manager split is on `codex/file-manager`; Settings changes are on `codex/settings-app`; window-control changes are on `codex/window-controls`; the installer/app milestones are on `codex/single-disk-app-framework`.
 Use Git revert on the feature commit to undo a change while keeping history.
 Git does not back up ignored VDIs or documents stored inside them.
 
@@ -173,6 +173,8 @@ and scrolls with Page Up/Down, arrow keys, Home/End, or the draggable scrollbar.
 The sidebar stays fixed. Narrow windows use a single column of Home cards.
 
 
+
+Settings > Personalization includes Light, Dark and System appearance modes. System follows the current dark YAAI desktop, not the Windows host. Light remains the default for existing installations; the saved choice restores at boot. Appearance modes currently style Settings and its title bar; the other desktop apps retain their existing dark styling. H/I/J selects System/Light/Dark within Personalization.
 
 Wallpaper, Ocean/Amber accents, volume, mute and country/time-zone changes apply
 immediately. Resolution choices (Auto, 1024 x 768, 1280 x 720, 1920 x 1080) apply

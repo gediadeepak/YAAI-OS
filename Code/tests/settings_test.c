@@ -10,13 +10,17 @@ typedef struct {
     unsigned size;
     unsigned char bytes[300];
 } Record;
-static Record records[6];
+static Record records[8];
 static int fail;
 static unsigned slot(const char *key) {
     unsigned n = 0;
     while (key[n])
         ++n;
-    return (key[0] == 'T' ? 2 : key[0] == 'D' && key[1] == 'i' ? 4 : 0) + (key[n - 1] == 'B');
+    return (key[0] == 'C'                    ? 6
+            : key[0] == 'T'                  ? 2
+            : key[0] == 'D' && key[1] == 'i' ? 4
+                                             : 0) +
+           (key[n - 1] == 'B');
 }
 static StoreResult read(void *context, const char *key, void *p, unsigned *n) {
     (void)context;
@@ -64,7 +68,7 @@ static uint64_t release(void *p) {
     return 0;
 }
 int settings_test(void) {
-    for (unsigned i = 0; i < 6; ++i)
+    for (unsigned i = 0; i < 8; ++i)
         records[i] = (Record){0};
     fail = 0;
     storage_attach((StoreBackend){0, read, write});
@@ -114,6 +118,29 @@ int settings_test(void) {
     CHECK(storage_put("Display", invalid, sizeof(invalid)) == STORE_OK);
     settings_initialize(&boot);
     CHECK(settings_current()->resolution == 0 && settings_current()->theme == 1);
+    CHECK(settings_current()->color_mode == COLOR_LIGHT && !settings_dark());
+    settings_color_mode(COLOR_DARK);
+    settings_initialize(&boot);
+    CHECK(settings_current()->color_mode == COLOR_DARK && settings_dark() && settings_current()->theme == 1);
+    settings_color_mode(COLOR_SYSTEM);
+    settings_initialize(&boot);
+    CHECK(settings_current()->color_mode == COLOR_SYSTEM && settings_dark());
+    settings_color_mode(COLOR_LIGHT);
+    settings_initialize(&boot);
+    CHECK(!settings_dark() && settings_current()->volume == 75);
+    settings_color_mode(99);
+    CHECK(settings_current()->color_mode == COLOR_LIGHT);
+    fail = 1;
+    settings_color_mode(COLOR_DARK);
+    CHECK(settings_dark());
+    fail = 0;
+    settings_initialize(&boot);
+    CHECK(!settings_dark());
+    uint32_t bad_color[2] = {1, 99};
+    CHECK(storage_put("ColorMode", bad_color, sizeof(bad_color)) == STORE_OK);
+    settings_initialize(&boot);
+    CHECK(settings_current()->color_mode == COLOR_LIGHT);
+
     storage_attach((StoreBackend){0});
     settings_initialize(&boot);
     return 0;

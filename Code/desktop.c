@@ -243,7 +243,7 @@ static void draw_dock(void)
 static void chrome(int id, Rect window, const char *title)
 {
     int maximized=wm.layout[id]==WINDOW_MAXIMIZED;
-    int settings_style=id==APP_SETTINGS;
+    int settings_style=id==APP_SETTINGS&&!settings_dark();
     uint32_t controls=settings_style?rgb(80,96,114):rgb(170,196,215);
     if(!maximized)gui_shadow(&canvas,window,20);
     gui_round_rect(&canvas,window,maximized?0:20,settings_style?rgb(204,214,226):rgb(61,81,103),220);

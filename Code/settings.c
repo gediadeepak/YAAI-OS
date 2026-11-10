@@ -1,18 +1,18 @@
 #include "settings.h"
 #include "screen.h"
 #include "storage.h"
-static DesktopSettings current = {0, 100, 0, 0, 0};
+static DesktopSettings current = {0, 100, 0, 0, 0, COLOR_LIGHT};
 static const char *status_text = "Default settings";
 const DesktopSettings *settings_current(void) { return &current; }
 const char *settings_status(void) { return status_text; }
 void settings_initialize(const BootInfo *boot) {
-    current = (DesktopSettings){0, 100, boot->setup.zone < 7 ? boot->setup.zone : 0, 0, 0};
+    current = (DesktopSettings){0, 100, boot->setup.zone < 7 ? boot->setup.zone : 0, 0, 0, COLOR_LIGHT};
     uint32_t data[4];
     unsigned size = sizeof(data);
     StoreResult result = storage_get("Desktop", data, &size);
     if (result == STORE_OK && size == sizeof(data) && data[0] == 1 && data[1] < 3 && data[2] <= 100 &&
         data[3] < 7) {
-        current = (DesktopSettings){data[1], data[2], data[3], 0, 0};
+        current = (DesktopSettings){data[1], data[2], data[3], 0, 0, COLOR_LIGHT};
         status_text = "Settings restored";
         serial_write("SETTINGS: restored\r\n");
     } else {
@@ -32,6 +32,13 @@ void settings_initialize(const BootInfo *boot) {
     if (storage_get("Display", mode, &size) == STORE_OK && size == sizeof(mode) && mode[0] == 1 &&
         mode[1] < 4) {
         current.resolution = mode[1];
+        status_text = "Settings restored";
+    }
+    uint32_t colors[2];
+    size = sizeof(colors);
+    if (storage_get("ColorMode", colors, &size) == STORE_OK && size == sizeof(colors) && colors[0] == 1 &&
+        colors[1] <= COLOR_DARK) {
+        current.color_mode = colors[1];
         status_text = "Settings restored";
     }
 }
@@ -77,4 +84,15 @@ void settings_resolution(unsigned value) {
         current.resolution = value;
     status_text =
         result == STORE_OK ? "Resolution saved - restart to apply" : "Resolution not saved - try again";
+}
+// The current YAAI shell uses dark surfaces; System follows YAAI, not the host OS.
+int settings_dark(void) { return current.color_mode != COLOR_LIGHT; }
+void settings_color_mode(unsigned value) {
+    if (value > COLOR_DARK || value == current.color_mode)
+        return;
+    current.color_mode = value;
+    uint32_t data[2] = {1, value};
+    status_text = storage_put("ColorMode", data, sizeof(data)) == STORE_OK
+                      ? "Appearance saved"
+                      : "Appearance not saved - session only";
 }

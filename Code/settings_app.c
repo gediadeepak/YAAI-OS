@@ -26,12 +26,13 @@ static const char *descriptions[] = {
     "Resolution, display size and scaling", "Wallpaper, colors and accent themes",
     "Volume, mute and test sound",          "Country, time zone and local time",
     "OS version, memory and storage",       "Network, wireless and power status"};
-static const char *keywords[] = {"display screen resolution scaling size monitor",
-                                 "personalization appearance wallpaper background theme color colour accent",
-                                 "sound audio speaker volume mute",
-                                 "time language country zone date clock",
-                                 "about system version memory ram storage information",
-                                 "devices network ethernet wifi wireless battery power sim bluetooth"};
+static const char *keywords[] = {
+    "display screen resolution scaling size monitor",
+    "personalization appearance wallpaper background theme color colour accent light dark system mode",
+    "sound audio speaker volume mute",
+    "time language country zone date clock",
+    "about system version memory ram storage information",
+    "devices network ethernet wifi wireless battery power sim bluetooth"};
 unsigned settings_app_page(void) { return page; }
 int settings_app_scroll(void) { return scroll; }
 void settings_app_select(unsigned p) {
@@ -66,9 +67,76 @@ static int inside(GuiRect r, int x, int y) {
 }
 
 static uint32_t rgb(unsigned r, unsigned g, unsigned b) {
+    if (settings_dark()) {
+        unsigned c = (r << 16) | (g << 8) | b;
+        switch (c) {
+        case 0x1c2635:
+            r = 232;
+            g = 238;
+            b = 246;
+            break;
+        case 0x627083:
+            r = 159;
+            g = 176;
+            b = 197;
+            break;
+        case 0xf4f6fa:
+            r = 15;
+            g = 23;
+            b = 37;
+            break;
+        case 0xeff3f8:
+            r = 19;
+            g = 30;
+            b = 46;
+            break;
+        case 0xdae1e9:
+            r = 44;
+            g = 60;
+            b = 80;
+            break;
+        case 0xdeebf1:
+            r = 29;
+            g = 58;
+            b = 73;
+            break;
+        case 0xb1bdcc:
+            r = 63;
+            g = 83;
+            b = 104;
+            break;
+        case 0xd7ebf2:
+            r = 29;
+            g = 75;
+            b = 94;
+            break;
+        case 0xdde4ec:
+            r = 37;
+            g = 52;
+            b = 70;
+            break;
+        case 0xced7e1:
+            r = 69;
+            g = 87;
+            b = 107;
+            break;
+        case 0xf4f8fb:
+        case 0xf2f8fa:
+        case 0xf8fafc:
+        case 0xf6f9fc:
+            r = 25;
+            g = 39;
+            b = 58;
+            break;
+        }
+    }
     return color(screen, (uint8_t)r, (uint8_t)g, (uint8_t)b);
 }
-static uint32_t accent(void) { return settings_current()->theme ? rgb(164, 117, 42) : rgb(0, 116, 135); }
+static uint32_t surface(void) { return settings_dark() ? rgb(25, 39, 58) : rgb(255, 255, 255); }
+static uint32_t accent(void) {
+    return settings_current()->theme ? (settings_dark() ? rgb(225, 183, 102) : rgb(164, 117, 42))
+                                     : (settings_dark() ? rgb(61, 185, 204) : rgb(0, 116, 135));
+}
 static uint32_t ink(void) { return rgb(28, 38, 53); }
 static uint32_t muted(void) { return rgb(98, 112, 131); }
 static void fill(GuiRect r, int radius, uint32_t c) {
@@ -156,7 +224,7 @@ static void icon(int kind, int x, int y, uint32_t c) {
 }
 static void card(GuiRect r) {
     fill(r, 12, rgb(218, 225, 233));
-    fill((GuiRect){r.x + 1, r.y + 1, r.width - 2, r.height - 2}, 11, rgb(255, 255, 255));
+    fill((GuiRect){r.x + 1, r.y + 1, r.width - 2, r.height - 2}, 11, surface());
 }
 static void row(GuiRect r, int symbol, const char *title, const char *subtitle, int action) {
     icon(symbol, r.x + 16, r.y + 17, accent());
@@ -345,6 +413,14 @@ static void details(void) {
             clipped(r.x, y + th + 59, tw, labels[i], GUI_SMALL, muted());
         }
         y += th + 109;
+        text(0, y, "Settings appearance", GUI_BODY, ink());
+        int mode_width = (width - 24) / 3;
+        const char *modes[] = {"System", "Light", "Dark"};
+        for (unsigned mode = 0; mode < 3; ++mode)
+            choice((GuiRect){(int)mode * (mode_width + 12), y + 34, mode_width, 58}, modes[mode], "",
+                   s->color_mode == mode, 300 + (int)mode);
+        text(0, y + 103, "System follows YAAI's dark desktop.", GUI_SMALL, muted());
+        y += 136;
         choice((GuiRect){0, y, width, 70}, "Ocean accent", "A calm teal highlight", !s->theme, 203);
         y += 80;
         choice((GuiRect){0, y, width, 70}, "Amber accent", "Warm golden highlights", s->theme == 1, 204);
@@ -476,7 +552,7 @@ static void draw(const BootInfo *boot, GuiRect w) {
         icon((int)p, r.x + 12, r.y + 5, p == page ? accent() : muted());
         clipped(r.x + 43, r.y + 10, r.width - 50, names[p], GUI_SMALL, ink());
     }
-    fill(search_box, 7, rgb(255, 255, 255));
+    fill(search_box, 7, surface());
     line(search_box.x, search_box.y + 37, search_box.x + search_box.width, search_box.y + 37,
          searching ? 2 : 1, searching ? accent() : rgb(177, 189, 204));
     int query_width = gui_text_width(query, GUI_SMALL);
@@ -593,8 +669,10 @@ static void click(GuiRect w, int x, int y) {
                 settings_app_select((unsigned)a);
             else if (a < 200)
                 settings_wallpaper((unsigned)(a - 100));
-            else
+            else if (a < 300)
                 option((unsigned)(a - 200));
+            else
+                settings_color_mode((unsigned)(a - 300));
             return;
         }
 }
@@ -673,6 +751,10 @@ static void key(char k) {
     }
     if (k == '7') {
         settings_app_select(HOME);
+        return;
+    }
+    if (page == 1 && k >= 'h' && k <= 'j') {
+        settings_color_mode((unsigned)(k - 'h'));
         return;
     }
     if (k >= 'a' && k <= 'g')
