@@ -2,15 +2,17 @@
 #include "../edit_keys.h"
 #include "../file_app.h"
 #include "../file_browser.h"
+#include "../settings.h"
 #include "../volumes.h"
-#define CHECK(x)                                                                                             \
-    do {                                                                                                     \
-        if (!(x))                                                                                            \
-            return __LINE__;                                                                                 \
+#define CHECK(x)                                                                                           \
+    do {                                                                                                   \
+        if (!(x))                                                                                          \
+            return __LINE__;                                                                               \
     } while (0)
 static uint8_t sectors[1024][512];
 static uint64_t addresses[1024];
 static unsigned used;
+static uint32_t canvas_pixels[640 * 480 + 2];
 static int read_sector(void *c, uint64_t lba, void *p) {
     (void)c;
     if (lba >= 32768)
@@ -175,7 +177,29 @@ int browser_test(void) {
     apps_key(APP_NOTES, 7);
     CHECK(apps_close(APP_NOTES));
     CHECK(apps_close(APP_FILES));
-    apps_initialize(0);
     files_mount(0);
+    CHECK(apps_launch(APP_FILES));
+    apps_key(APP_FILES, 'n');
+    CHECK(equal(file_browser_status(), "Install YAAI OS, then boot the system disk to save files"));
+    apps_key(APP_FILES, 'f');
+    CHECK(equal(file_browser_status(), "Install YAAI OS, then boot the system disk to save files"));
+    CHECK(gui_initialize());
+    BootInfo preview = {0};
+    preview.width = 640;
+    preview.height = 480;
+    preview.pixels_per_scanline = 640;
+    preview.pixel_format = 1;
+    preview.framebuffer = canvas_pixels + 1;
+    canvas_pixels[0] = 0x12345678;
+    canvas_pixels[640 * 480 + 1] = 0xabcdef01;
+    unsigned appearance = settings_current()->color_mode;
+    for (unsigned mode = 0; mode < 3; ++mode) {
+        settings_color_mode(mode);
+        apps_draw(APP_FILES, &preview, (GuiRect){0, 0, 640, 480});
+        CHECK(canvas_pixels[0] == 0x12345678 && canvas_pixels[640 * 480 + 1] == 0xabcdef01);
+    }
+    settings_color_mode(appearance);
+    CHECK(apps_close(APP_FILES));
+    apps_initialize(0);
     return 0;
 }

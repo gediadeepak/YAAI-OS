@@ -16,6 +16,7 @@
 #include "apps.h"
 #include "desktop_keys.h"
 #include "settings_app.h"
+#include "shell_ui.h"
 
 
 
@@ -35,6 +36,8 @@ static WindowManager wm;
 #define order wm.order
 static Rect dock, brand_button, terminal_button, system_button, files_button, calculator_button, about_button, notes_button, clock_panel, menu;
 static PlatformPointer pointer;
+static ShellLauncher launcher;
+static uint64_t hover_since;
 static int menu_open, terminal_started, scene_dirty, hovered;
 static int dragging, resizing, drag_x, drag_y, wallpaper_style;
 static unsigned volume = 100;
@@ -133,47 +136,7 @@ static void draw_pointer(void)
                       shape[y][x] == 'X' ? rgb(8,18,29) : rgb(239,248,255));
 }
 
-static void terminal_symbol(int x, int y)
-{
-    gui_round_rect(&canvas,(Rect){x,y,42,34},9,rgb(28,58,79),255);
-    gui_round_rect(&canvas,(Rect){x + 1,y + 1,40,32},8,rgb(13,28,46),255);
-    gui_line(&canvas,x + 10,y + 10,x + 16,y + 16,2,rgb(132,224,218));
-    gui_line(&canvas,x + 16,y + 16,x + 10,y + 22,2,rgb(132,224,218));
-    gui_line(&canvas,x + 22,y + 23,x + 31,y + 23,2,rgb(132,224,218));
-}
-
-static void system_symbol(int x, int y)
-{
-    for (int row = 0; row < 3; ++row) {
-        int top = y + 7 + row * 11;
-        gui_line(&canvas,x + 3,top,x + 36,top,2,rgb(149,185,207));
-        int knob = x + 9 + row * 8;
-        gui_round_rect(&canvas,(Rect){knob,top - 4,8,8},4,rgb(217,188,122),255);
-    }
-}
-
-static void files_symbol(int x, int y)
-{
-    gui_round_rect(&canvas,(Rect){x + 2,y + 3,20,12},4,rgb(213,181,112),255);
-    gui_round_rect(&canvas,(Rect){x,y + 10,42,27},6,rgb(177,142,81),255);
-    gui_round_rect(&canvas,(Rect){x + 2,y + 14,38,21},5,rgb(226,199,143),255);
-}
-static void brand_symbol(int x, int y)
-{
-    gui_round_rect(&canvas,(Rect){x,y,36,36},12,rgb(90,88,65),210);
-    gui_round_rect(&canvas,(Rect){x + 1,y + 1,34,34},11,rgb(41,44,42),255);
-    gui_line(&canvas,x + 10,y + 10,x + 18,y + 18,2,rgb(231,206,150));
-    gui_line(&canvas,x + 26,y + 10,x + 18,y + 18,2,rgb(231,206,150));
-    gui_line(&canvas,x + 18,y + 18,x + 18,y + 27,2,rgb(231,206,150));
-}
-static void calculator_symbol(int x,int y)
-{
-    gui_round_rect(&canvas,(Rect){x+4,y,30,38},7,rgb(128,177,188),255);
-    gui_round_rect(&canvas,(Rect){x+8,y+5,22,9},2,rgb(20,40,55),255);
-    for(int row=0;row<2;++row)for(int col=0;col<3;++col)
-        gui_round_rect(&canvas,(Rect){x+9+col*7,y+20+row*7,4,4},1,rgb(24,48,61),255);
-}
-
+static void brand_symbol(int x,int y) {shell_icon(&canvas,0,(Rect){x,y,36,36});}
 static void create_wallpaper(void)
 {
     if (!gui_wallpaper(&wallpaper)) {
@@ -206,44 +169,43 @@ static void refresh_clock(void)
 
 static void clock_widget(int shadow)
 {
-    if (shadow) gui_shadow(&canvas,clock_panel,18);
-    gui_round_rect(&canvas,clock_panel,18,rgb(15,28,46),218);
-    int x = clock_panel.x, y = clock_panel.y;
-    gui_round_rect(&canvas,(Rect){x + 20,y + 20,22,22},11,rgb(75,116,132),255);
-    gui_round_rect(&canvas,(Rect){x + 22,y + 22,18,18},9,rgb(20,39,56),255);
-    gui_line(&canvas,x + 31,y + 24,x + 31,y + 31,1,rgb(153,211,217));
-    gui_line(&canvas,x + 31,y + 31,x + 36,y + 33,1,rgb(153,211,217));
-    label(x + 58,y + 7,time_text,GUI_BODY,rgb(229,238,247));
-    label(x + 58,y + 34,date_text,GUI_SMALL,rgb(150,171,194));
+    ShellPalette p=shell_palette(&canvas);
+    if(shadow)gui_shadow(&canvas,clock_panel,18);
+    gui_round_rect(&canvas,clock_panel,18,p.background,245);
+    int x=clock_panel.x,y=clock_panel.y;
+    gui_round_rect(&canvas,(Rect){x+20,y+20,22,22},11,p.muted,255);
+    gui_round_rect(&canvas,(Rect){x+22,y+22,18,18},9,p.surface,255);
+    gui_line(&canvas,x+31,y+24,x+31,y+31,1,p.accent);
+    gui_line(&canvas,x+31,y+31,x+36,y+33,1,p.accent);
+    label(x+58,y+7,time_text,GUI_BODY,p.text);
+    label(x+58,y+34,date_text,GUI_SMALL,p.muted);
 }
-
 static void draw_dock(void)
 {
+    ShellPalette p=shell_palette(&canvas);
     gui_shadow(&canvas,dock,24);
-    gui_round_rect(&canvas,dock,24,rgb(19,32,51),235);
-    Rect buttons[7] = {brand_button,terminal_button,system_button,files_button,calculator_button,about_button,notes_button};
-    int targets[7] = {1,2,3,9,15,12,17},ids[7]={0,1,2,6,5,4,3};
-    for (int index = 0; index < 7; ++index) {
-        if (hovered == targets[index] || (index && active_window == ids[index]))
-            gui_round_rect(&canvas,buttons[index],15,(settings_current()->theme?rgb(109,81,43):rgb(50,79,97)),hovered == targets[index] ? 220 : 155);
+    gui_round_rect(&canvas,dock,24,p.border,255);
+    gui_round_rect(&canvas,(Rect){dock.x+1,dock.y+1,dock.width-2,dock.height-2},23,p.background,250);
+    Rect buttons[7]={brand_button,files_button,notes_button,system_button,terminal_button,calculator_button,about_button};
+    const int targets[7]={1,9,17,3,2,15,12}, ids[7]={0,6,3,2,1,5,4};
+    const char *names[7]={"Apps (F10)","Files","Notes","Settings","Terminal","Calculator","About YAAI OS"};
+    gui_line(&canvas,dock.x+74,dock.y+20,dock.x+74,dock.y+58,1,p.border);
+    for(int i=0;i<7;++i) {
+        int selected=i?active_window==ids[i]:menu_open;
+        if(hovered==targets[i]||selected)gui_round_rect(&canvas,buttons[i],15,p.hover,255);
+        shell_icon(&canvas,(unsigned)ids[i],(Rect){buttons[i].x+6,buttons[i].y+6,44,44});
+        if(i&&wm.opened[ids[i]]) {
+            int w=selected?18:4;
+            gui_round_rect(&canvas,(Rect){buttons[i].x+(56-w)/2,dock.y+73,w,3},1,selected?p.accent:p.muted,255);
+        }
+        if(!menu_open&&!context_open&&!power_dialog&&hovered==targets[i]&&apps_ticks()-hover_since>=12)
+            shell_tooltip(&canvas,buttons[i],names[i]);
     }
-    brand_symbol(brand_button.x + 7,brand_button.y + 7);
-    terminal_symbol(terminal_button.x + 4,terminal_button.y + 9);
-    system_symbol(system_button.x + 5,system_button.y + 7);
-    files_symbol(files_button.x + 4,files_button.y + 6);
-    calculator_symbol(calculator_button.x+4,calculator_button.y+5);
-    gui_round_rect(&canvas,(Rect){about_button.x+12,about_button.y+8,28,28},14,rgb(75,112,135),255);
-    label(about_button.x+22,about_button.y+12,"i",GUI_BODY,rgb(227,241,249));
-    gui_round_rect(&canvas,(Rect){notes_button.x+12,notes_button.y+5,28,36},5,rgb(161,204,215),255);
-    for(int line=0;line<3;++line)gui_line(&canvas,notes_button.x+18,notes_button.y+15+line*7,notes_button.x+33,notes_button.y+15+line*7,2,rgb(41,77,94));
-    for(unsigned i=1;i<7;++i)if(wm.opened[ids[i]])
-        gui_round_rect(&canvas,(Rect){buttons[i].x+20,buttons[i].y+56,10,3},1,active_window==ids[i]?(settings_current()->theme?rgb(235,195,120):rgb(142,220,213)):rgb(102,125,145),255);
 }
-
 static void chrome(int id, Rect window, const char *title)
 {
     int maximized=wm.layout[id]==WINDOW_MAXIMIZED;
-    int settings_style=id==APP_SETTINGS&&!settings_dark();
+    int settings_style=(id==APP_SETTINGS||id==APP_FILES)&&!settings_dark();
     uint32_t controls=settings_style?rgb(80,96,114):rgb(170,196,215);
     if(!maximized)gui_shadow(&canvas,window,20);
     gui_round_rect(&canvas,window,maximized?0:20,settings_style?rgb(204,214,226):rgb(61,81,103),220);
@@ -273,6 +235,7 @@ static void system_panel(void) {chrome(2,system_window,"Settings");apps_draw(2,&
 
 static void scene(void)
 {
+    ShellPalette palette=shell_palette(&canvas);
     restore_wallpaper((Rect){0,0,(int)canvas.width,(int)canvas.height});
     for (unsigned pass = 0; pass < wm.count; ++pass) {
         int window = order[pass];
@@ -295,50 +258,29 @@ static void scene(void)
         }
     }
     if(!fullscreen_window()) {clock_widget(1);draw_dock();}
-    if (menu_open) {
-        gui_shadow(&canvas,menu,20);
-        gui_round_rect(&canvas,menu,20,rgb(21,35,54),248);
-        label(menu.x + 22,menu.y + 15,"YAAI OS",GUI_BODY,rgb(224,207,167));
-        if (hovered == 7) gui_round_rect(&canvas,(Rect){menu.x + 10,menu.y + 52,menu.width - 20,38},12,rgb(46,72,92),235);
-        if (hovered == 8) gui_round_rect(&canvas,(Rect){menu.x + 10,menu.y + 92,menu.width - 20,38},12,rgb(46,72,92),235);
-        label(menu.x + 22,menu.y + 60,"Open Terminal",GUI_SMALL,rgb(218,232,246));
-        label(menu.x + 22,menu.y + 100,"Settings",GUI_SMALL,rgb(218,232,246));
-        if (hovered == 11) gui_round_rect(&canvas,(Rect){menu.x + 10,menu.y + 132,menu.width - 20,38},12,rgb(46,72,92),235);
-        label(menu.x + 22,menu.y + 140,"Files",GUI_SMALL,rgb(218,232,246));
-        if (hovered == 12) gui_round_rect(&canvas,(Rect){menu.x + 10,menu.y + 172,menu.width - 20,38},12,rgb(46,72,92),235);
-        label(menu.x + 22,menu.y + 180,"About YAAI OS",GUI_SMALL,rgb(218,232,246));
-        if(hovered==16)gui_round_rect(&canvas,(Rect){menu.x+10,menu.y+212,menu.width-20,38},12,rgb(46,72,92),235);
-        label(menu.x+22,menu.y+220,"Calculator (F11)",GUI_SMALL,rgb(218,232,246));
-        if(hovered==18)gui_round_rect(&canvas,(Rect){menu.x+10,menu.y+252,menu.width-20,38},12,rgb(46,72,92),235);
-        label(menu.x+22,menu.y+260,"Notes (F12)",GUI_SMALL,rgb(218,232,246));
-        const char *power_items[] = {"Restart (R)", "Shut down (S)"};
-        for (int i = 0; i < 2; ++i) {
-            if (hovered == 13 + i) gui_round_rect(&canvas,(Rect){menu.x + 10,menu.y + 292 + i * 40,menu.width - 20,38},12,rgb(46,72,92),235);
-            label(menu.x + 22,menu.y + 300 + i * 40,power_items[i],GUI_SMALL,rgb(218,232,246));
-        }
-    }
+    if(menu_open)shell_launcher_draw(&canvas,&launcher,menu);
     if (context_open) {
         gui_shadow(&canvas,context_menu,14);
-        gui_round_rect(&canvas,context_menu,14,rgb(19,34,53),250);
+        gui_round_rect(&canvas,context_menu,14,palette.background,255);
         const char *items[] = {"AI human wallpaper", "Midnight wallpaper", "Teal wallpaper", "Devices and sound"};
         for (int index = 0; index < 4; ++index) {
             if (hovered == 20 + index)
-                gui_round_rect(&canvas,(Rect){context_menu.x + 6,context_menu.y + 6 + index * 36,238,34},8,rgb(44,69,87),255);
-            label(context_menu.x + 16,context_menu.y + 15 + index * 36,items[index],GUI_SMALL,rgb(218,232,246));
+                gui_round_rect(&canvas,(Rect){context_menu.x + 6,context_menu.y + 6 + index * 36,238,34},8,palette.hover,255);
+            label(context_menu.x + 16,context_menu.y + 15 + index * 36,items[index],GUI_SMALL,palette.text);
         }
     }
     if (power_dialog) {
         Rect p = power_panel;
         gui_round_rect(&canvas,(Rect){0,0,(int)canvas.width,(int)canvas.height},0,rgb(3,8,16),150);
-        gui_shadow(&canvas,p,20); gui_round_rect(&canvas,p,20,rgb(17,30,47),255);
-        label(p.x + 26,p.y + 24,power_dialog == 2 ? "Restart YAAI OS?" : "Shut down YAAI OS?",GUI_HEADING,rgb(233,240,249));
-        label(p.x + 26,p.y + 81,file_app_has_changes() ? "Your open note will be saved first." : "Saved files will be flushed to disk.",GUI_SMALL,rgb(168,196,211));
-        label(p.x + 26,p.y + 113,power_error ? power_error : "Cancel to keep working. Enter to continue.",GUI_SMALL,power_error ? rgb(244,174,166) : rgb(168,196,211));
+        gui_shadow(&canvas,p,20); gui_round_rect(&canvas,p,20,palette.background,255);
+        label(p.x + 26,p.y + 24,power_dialog == 2 ? "Restart YAAI OS?" : "Shut down YAAI OS?",GUI_HEADING,palette.text);
+        label(p.x + 26,p.y + 81,file_app_has_changes() ? "Your open note will be saved first." : "Saved files will be flushed to disk.",GUI_SMALL,palette.muted);
+        label(p.x + 26,p.y + 113,power_error ? power_error : "Cancel to keep working. Enter to continue.",GUI_SMALL,power_error ? rgb(199,75,69) : palette.muted);
         Rect cancel = {p.x + 24,p.y + 168,148,40}, confirm = {p.x + p.width - 196,p.y + 168,172,40};
-        gui_round_rect(&canvas,cancel,10,rgb(38,57,77),255);
-        gui_round_rect(&canvas,confirm,10,rgb(44,87,96),255);
-        centered(cancel,cancel.y + 11,"Cancel",GUI_SMALL,rgb(224,236,244));
-        centered(confirm,confirm.y + 11,power_dialog == 2 ? "Restart" : "Shut down",GUI_SMALL,rgb(224,236,244));
+        gui_round_rect(&canvas,cancel,10,palette.surface,255);
+        gui_round_rect(&canvas,confirm,10,palette.hover,255);
+        centered(cancel,cancel.y + 11,"Cancel",GUI_SMALL,palette.text);
+        centered(confirm,confirm.y + 11,power_dialog == 2 ? "Restart" : "Shut down",GUI_SMALL,palette.text);
     }
 }
 static void confirm_power(void)
@@ -377,17 +319,7 @@ static int target_at(int x, int y)
         int item = (y - context_menu.y - 6) / 36;
         return item >= 0 && item < 4 ? 20 + item : 0;
     }
-    if (menu_open && inside(menu,x,y)) {
-        if (inside((Rect){menu.x + 10,menu.y + 52,menu.width - 20,38},x,y)) return 7;
-        if (inside((Rect){menu.x + 10,menu.y + 92,menu.width - 20,38},x,y)) return 8;
-        if (inside((Rect){menu.x + 10,menu.y + 132,menu.width - 20,38},x,y)) return 11;
-        if (inside((Rect){menu.x + 10,menu.y + 172,menu.width - 20,38},x,y)) return 12;
-        if (inside((Rect){menu.x + 10,menu.y + 212,menu.width - 20,38},x,y)) return 16;
-        if (inside((Rect){menu.x + 10,menu.y + 252,menu.width - 20,38},x,y)) return 18;
-        if (inside((Rect){menu.x + 10,menu.y + 292,menu.width - 20,38},x,y)) return 13;
-        if (inside((Rect){menu.x + 10,menu.y + 332,menu.width - 20,38},x,y)) return 14;
-        return 0;
-    }
+    if(menu_open&&inside(menu,x,y))return shell_launcher_hit(&launcher,menu,x,y);
     if(!fullscreen_window()) {
     if (inside(brand_button,x,y)) return 1;
     if (inside(terminal_button,x,y)) return 2;
@@ -411,12 +343,35 @@ static int target_at(int x, int y)
     return 0;
 }
 
+static void activate_shell_target(int target)
+{
+    menu_open=context_open=0;scene_dirty=1;
+    if(target==2)open_window(1);
+    else if(target==3){settings_app_select(6);open_window(2);}
+    else if(target==SHELL_DEVICES){settings_app_select(5);open_window(2);}
+    else if(target==9)open_window(APP_FILES);
+    else if(target==17)open_window(APP_NOTES);
+    else if(target==12)open_window(4);
+    else if(target==15)open_window(APP_CALCULATOR);
+    else if(target==13||target==14){power_dialog=target==13?2:1;power_error=0;dragging=resizing=0;}
+}
+static void toggle_launcher(void)
+{
+    menu_open=!menu_open;
+    if(menu_open)shell_launcher_init(&launcher);
+    context_open=dragging=resizing=0;scene_dirty=1;
+}
 static void click(int x, int y)
 {
     int target = target_at(x,y);
     if (power_dialog) {
         if (target == 31) { power_dialog = 0; power_error = 0; scene_dirty = 1; }
         else if (target == 32) confirm_power();
+        return;
+    }
+    if(menu_open&&inside(menu,x,y)) {
+        if(target==SHELL_CLEAR){shell_launcher_init(&launcher);scene_dirty=1;}
+        else if(target&&target!=SHELL_SEARCH)activate_shell_target(target);
         return;
     }
     if (target >= 20 && target <= 23) {
@@ -457,24 +412,9 @@ static void click(int x, int y)
         scene_dirty = 1;
         return;
     }
-    if (target == 1) { menu_open = !menu_open; scene_dirty = 1; return; }
-    if (menu_open) { menu_open = 0; scene_dirty = 1; }
-    if (target == 2 || target == 5 || target == 7) open_window(1);
-    else if (target == 3 || target == 6 || target == 8) { settings_app_select(6); open_window(2); }
-    else if (target == 9 || target == 10 || target == 11) open_window(APP_FILES);
-    else if (target == 17 || target == 18) open_window(APP_NOTES);
-    else if (target == 12) open_window(4);
-    else if (target == 15 || target == 16) open_window(APP_CALCULATOR);
-    else if (target == 13 || target == 14) {
-        power_dialog = target == 13 ? 2 : 1; power_error = 0;
-        dragging = resizing = context_open = 0; scene_dirty = 1;
-    }
-    else if (target == 4) {
-        active_window = 0; scene_dirty = 1;
-        serial_write("DESKTOP: window closed\r\n");
-    }
+    if(target==1){toggle_launcher();return;}
+    activate_shell_target(target);
 }
-
 _Noreturn void desktop_run(const BootInfo *boot)
 {
     if (!gui_initialize()) { console_restore_fullscreen(); shell_run(boot); }
@@ -504,16 +444,17 @@ _Noreturn void desktop_run(const BootInfo *boot)
     for(unsigned id=1;id<=6;++id)windows_register(&wm,id,wm.rect[id]);
     apps_initialize(&wm);
     work_area=(Rect){12,96,width-24,height-204};
-    dock = (Rect){(width - 488) / 2,height - 96,488,76};
-    brand_button = (Rect){dock.x + 13,dock.y + 10,50,50};
-    terminal_button = (Rect){dock.x + 81,dock.y + 10,50,50};
-    system_button = (Rect){dock.x + 149,dock.y + 10,50,50};
-    files_button = (Rect){dock.x + 217,dock.y + 10,50,50};
-    calculator_button=(Rect){dock.x+285,dock.y+10,50,50};
-    about_button=(Rect){dock.x+353,dock.y+10,50,50};
-    notes_button=(Rect){dock.x+421,dock.y+10,50,50};
-    clock_panel = (Rect){width - 254,24,226,64};
-    menu = (Rect){dock.x,dock.y - 395,242,380};
+    dock=(Rect){(width-472)/2,height-104,472,84};
+    brand_button=(Rect){dock.x+12,dock.y+10,56,56};
+    files_button=(Rect){dock.x+80,dock.y+10,56,56};
+    notes_button=(Rect){dock.x+144,dock.y+10,56,56};
+    system_button=(Rect){dock.x+208,dock.y+10,56,56};
+    terminal_button=(Rect){dock.x+272,dock.y+10,56,56};
+    calculator_button=(Rect){dock.x+336,dock.y+10,56,56};
+    about_button=(Rect){dock.x+400,dock.y+10,56,56};
+    clock_panel=(Rect){width-254,24,226,64};
+    menu=shell_launcher_bounds((unsigned)width,(unsigned)height,dock);
+    shell_launcher_init(&launcher);
     power_panel = (Rect){(width - 520) / 2,(height - 240) / 2,520,240};
     platform_network_initialize();
     if (!platform_input_initialize(boot->width,boot->height)) {
@@ -527,12 +468,13 @@ _Noreturn void desktop_run(const BootInfo *boot)
     refresh_clock(); scene(); present((Rect){0,0,width,height}); draw_pointer();
     serial_write(platform_pointer_available() ? "DESKTOP: modern UI ready / pointer enabled\r\n" : "DESKTOP: modern UI ready / keyboard shortcuts\r\n");
     unsigned ticks = 0;
-    unsigned last_theme=settings_current()->theme,last_zone=settings_current()->zone;
+    unsigned last_theme=settings_current()->theme,last_zone=settings_current()->zone,last_color=settings_current()->color_mode;
     for (;;) {
         if(wallpaper_style!=(int)settings_current()->wallpaper){wallpaper_style=(int)settings_current()->wallpaper;create_wallpaper();scene_dirty=1;}
         if(volume!=settings_current()->volume){volume=settings_current()->volume;platform_audio_volume(volume);scene_dirty=1;}
         if(last_theme!=settings_current()->theme){last_theme=settings_current()->theme;scene_dirty=1;}
         if(last_zone!=settings_current()->zone){last_zone=settings_current()->zone;refresh_clock();scene_dirty=1;}
+        if(last_color!=settings_current()->color_mode){last_color=settings_current()->color_mode;scene_dirty=1;}
         apps_tick();
         platform_network_poll();
         PlatformPointer old_pointer = pointer;
@@ -555,10 +497,12 @@ _Noreturn void desktop_run(const BootInfo *boot)
                 else arrange_window(active_window,key==DESKTOP_LEFT?WINDOW_LEFT:key==DESKTOP_RIGHT?WINDOW_RIGHT:WINDOW_NORMAL);
                 continue;
             }
-            if (key == 17) { menu_open = !menu_open; context_open = 0; scene_dirty = 1; continue; }
-            if (menu_open && (key == 'r' || key == 'R' || key == 's' || key == 'S')) {
-                power_dialog = (key == 'r' || key == 'R') ? 2 : 1;
-                power_error = 0; menu_open = dragging = resizing = 0; scene_dirty = 1; continue;
+            if(key==17){toggle_launcher();continue;}
+            if(menu_open){
+                int action=shell_launcher_key(&launcher,key);
+                if(action==SHELL_CLOSE)menu_open=0;
+                else if(action)activate_shell_target(action);
+                scene_dirty=1;continue;
             }
             if (key == 1) open_window(1);
             else if (key == 2) { settings_app_select(6); open_window(2); }
@@ -581,7 +525,7 @@ _Noreturn void desktop_run(const BootInfo *boot)
         }
         PlatformPointer event;
         for (unsigned count = 0; count < 64 && platform_pointer_read(&event); ++count) {
-            if (!power_dialog && (event.buttons & 2) && !(pointer.buttons & 2) && target_at(event.x,event.y) < 100) {
+            if (!menu_open && !power_dialog && (event.buttons & 2) && !(pointer.buttons & 2) && target_at(event.x,event.y) < 100) {
                 context_menu = (Rect){minimum(event.x,width - 258),minimum(event.y,height - 158),250,156};
                 context_open = 1; menu_open = 0; scene_dirty = 1;
                 serial_write("DESKTOP: context menu opened\r\n");
@@ -619,14 +563,16 @@ _Noreturn void desktop_run(const BootInfo *boot)
                 if (id == 1) console_reframe(window->x + 16,window->y + 64,window->width - 32,window->height - 80);
                 scene_dirty = 1;
             }
-            if(apps_find((unsigned)active_window)&&!power_dialog&&!dragging&&!resizing){
+            if(apps_find((unsigned)active_window)&&!menu_open&&!power_dialog&&!dragging&&!resizing){
                 apps_pointer((unsigned)active_window,*window_rect(active_window),event.x,event.y,event.buttons);
                 if(event.buttons&3)scene_dirty=1;
             }
+            if(menu_open&&(pointer.x!=event.x||pointer.y!=event.y)&&shell_launcher_hover(&launcher,menu,event.x,event.y))scene_dirty=1;
             pointer = event;
         }
         int target = target_at(pointer.x,pointer.y);
-        if (target != hovered) { hovered = target; scene_dirty = 1; }
+        if(target!=hovered){hovered=target;hover_since=apps_ticks();scene_dirty=1;}
+        if(apps_ticks()-hover_since==12)scene_dirty=1;
         if (++ticks == 40) { ticks = 0; refresh_clock(); clock_dirty = 1; }
         int moved = pointer.x != old_pointer.x || pointer.y != old_pointer.y;
         if (scene_dirty || terminal_dirty || clock_dirty || moved) {

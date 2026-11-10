@@ -9,12 +9,12 @@ $flags = @('--target=aarch64-pc-windows-msvc','-std=c11','-Wall','-Wextra','-Wer
 & "$llvmBin\clang.exe" @flags -DYAAI_LIVE_BOOT -Dkernel_main=arm_probe_main -c boot.c -o "$testDirectory\boot_probe.obj"
 if ($LASTEXITCODE -ne 0) { throw 'ARM64 test loader compilation failed.' }
 $objects = @("$testDirectory\boot_probe.obj")
-foreach ($source in @('memory_test','clock_test','gui_test','input_events_test','storage_test','settings_test','settings_ui_test','display_mode_test','files_test','volumes_test','editor_test','folders_test','apps_test','browser_test','boot_update_test','arm_boot_test')) {
+foreach ($source in @('memory_test','clock_test','gui_test','input_events_test','storage_test','settings_test','settings_ui_test','launcher_test','display_mode_test','files_test','volumes_test','editor_test','folders_test','apps_test','browser_test','boot_update_test','arm_boot_test')) {
   & "$llvmBin\clang.exe" @flags -c "tests\$source.c" -o "$testDirectory\$source.obj"
   if ($LASTEXITCODE -ne 0) { throw "$source compilation failed." }
   $objects += "$testDirectory\$source.obj"
 }
-$objects += @('kernel','console','shell','memory','runtime','setup','clock','desktop','gui','gui_assets','platform_compat','platform_hal','platform_vectors','input_events','virtio_input','storage','settings','platform_store','display_mode','files','platform_disk','file_app','file_browser','volumes','power','editor','window_manager','apps','notes_app','calculator','calculator_app','settings_app','boot_update') | ForEach-Object { "build\arm64\$_.obj" }
+$objects += @('kernel','console','shell','memory','runtime','setup','clock','desktop','shell_ui','gui','gui_assets','platform_compat','platform_hal','platform_vectors','input_events','virtio_input','storage','settings','platform_store','display_mode','files','platform_disk','file_app','file_browser','volumes','power','editor','window_manager','apps','notes_app','calculator','calculator_app','settings_app','boot_update') | ForEach-Object { "build\arm64\$_.obj" }
 & "$llvmBin\lld-link.exe" /subsystem:efi_application /entry:efi_main /nodefaultlib "/out:$testDirectory\esp\EFI\BOOT\BOOTAA64.EFI" @objects
 if ($LASTEXITCODE -ne 0) { throw 'ARM64 test linking failed.' }
 foreach ($ram in @('128M','512M')) {

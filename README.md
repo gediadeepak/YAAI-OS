@@ -104,7 +104,7 @@ A power loss during that one-time replacement may require booting installer medi
 again; retain the powered-off VDI backup. This is a prototype recovery mechanism,
 not a guarantee against every firmware, filesystem or physical-storage failure.
 
-Appearance modes are on `codex/settings-color-modes`; the Settings dashboard is on `codex/settings-dashboard`; the file-manager split is on `codex/file-manager`; Settings changes are on `codex/settings-app`; window-control changes are on `codex/window-controls`; the installer/app milestones are on `codex/single-disk-app-framework`.
+The searchable icon dock and launcher are on `codex/dock-launcher`; appearance modes are on `codex/settings-color-modes`; the Settings dashboard is on `codex/settings-dashboard`; the file-manager split is on `codex/file-manager`; Settings changes are on `codex/settings-app`; window-control changes are on `codex/window-controls`; the installer/app milestones are on `codex/single-disk-app-framework`.
 Use Git revert on the feature commit to undo a change while keeping history.
 Git does not back up ignored VDIs or documents stored inside them.
 
@@ -174,7 +174,7 @@ The sidebar stays fixed. Narrow windows use a single column of Home cards.
 
 
 
-Settings > Personalization includes Light, Dark and System appearance modes. System follows the current dark YAAI desktop, not the Windows host. Light remains the default for existing installations; the saved choice restores at boot. Appearance modes currently style Settings and its title bar; the other desktop apps retain their existing dark styling. H/I/J selects System/Light/Dark within Personalization.
+Settings > Personalization includes Light, Dark and System appearance modes. System follows the current dark YAAI desktop, not the Windows host. Light remains the default for existing installations; the saved choice restores at boot. Appearance modes style Settings, its title bar, the dock, launcher, clock and desktop menus; Files also follows these appearance modes; the remaining desktop apps retain their existing dark styling. H/I/J selects System/Light/Dark within Personalization.
 
 Wallpaper, Ocean/Amber accents, volume, mute and country/time-zone changes apply
 immediately. Resolution choices (Auto, 1024 x 768, 1280 x 720, 1920 x 1080) apply
@@ -221,3 +221,25 @@ The VM suites cover memory, input, graphics, storage, documents, app lifecycle,
 Calculator, independent Files/Notes workflows, saved Settings/resolution fallback and boot-update fault injection at 128 MiB and 512 MiB. The independent
 raw-disk verifier compares the complete documents partition, setup settings, GPT,
 boot records and retained original executable.
+
+## Dock and launcher
+
+The Y button or F10 opens a searchable six-app launcher. Files, Notes, Settings,
+Terminal, Calculator and About share the same native vector icons and order in
+both the launcher and dock. Type to filter, use Tab or arrow keys to navigate,
+and Enter to open. Escape clears a query first, then closes the launcher. Ctrl+A
+selects the query; Backspace edits it. Hover over a dock icon to see its name.
+A wide accent marker identifies the active app; small dots identify other open apps.
+Restart and Shut down are separate footer controls and require confirmation.
+Typing R or S searches apps. Light/Dark/System and Ocean/Amber accents apply to
+these desktop controls. The launcher fits the 640x480 fallback display.
+Files now shares the shell colour palette and vector icons, including folder/note,
+Trash, Up and Refresh controls. If documents storage is missing, Files explains
+that installation and an attached system VDI are required; creating folders or
+notes does not open a misleading dialog. No disk is automatically formatted.
+
+For this development workflow, prepare a fresh VirtualBox VM and fresh installer
+and blank system VDI pair for each completed update. Remove the old YAAI/SHR.I VM
+registrations and obsolete generated build media after testing, keeping the latest
+pair and screenshots. Scope cleanup to project-generated files in Code/build;
+never remove source code or unrelated virtual machines.

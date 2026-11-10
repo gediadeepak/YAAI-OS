@@ -5,6 +5,7 @@
 #include "gui.h"
 #include "screen.h"
 #include "settings.h"
+#include "shell_ui.h"
 static int inside(GuiRect r, int x, int y) {
     return x >= r.x && y >= r.y && x < r.x + r.width && y < r.y + r.height;
 }
@@ -14,6 +15,7 @@ static unsigned count, folder, selected, page, last_id, seen_revision;
 static uint64_t last_click;
 static int trash, trash_context, context_open, dialog, input_selected;
 static GuiRect context;
+static FileResult storage_result = FILE_UNAVAILABLE;
 static char input[FILE_PATH], status_line[160];
 static const char *message = "Double-click to open; right-click for actions";
 static unsigned previous_buttons;
@@ -51,6 +53,7 @@ static int before(const FileEntry *a, const FileEntry *b) {
 }
 static void refresh(void) {
     FileResult r = fs->list(folder, trash, entries, FILE_COUNT, &count);
+    storage_result = r;
     if (r != FILE_OK) {
         count = 0;
         message = files_error(r);
@@ -122,6 +125,12 @@ static int protected_entry(void) {
     return 0;
 }
 static void start_dialog(unsigned mode) {
+    if (storage_result != FILE_OK) {
+        message = storage_result == FILE_UNAVAILABLE
+                      ? "Install YAAI OS, then boot the system disk to save files"
+                      : files_error(storage_result);
+        return;
+    }
     if ((mode != 1 && !selected) || (mode != 1 && protected_entry())) {
         if (!selected && mode != 1)
             message = "Select an item first";
@@ -194,6 +203,12 @@ static void command(char key) {
         return;
     }
     if (key == 'f') {
+        if (storage_result != FILE_OK) {
+            message = storage_result == FILE_UNAVAILABLE
+                          ? "Install YAAI OS, then boot the system disk to save files"
+                          : files_error(storage_result);
+            return;
+        }
         if (trash || trash_context) {
             message = "Leave Trash before creating a note";
             return;
@@ -229,8 +244,10 @@ static void command(char key) {
 static uint32_t rgb(unsigned r, unsigned g, unsigned b) {
     return color(screen, (uint8_t)r, (uint8_t)g, (uint8_t)b);
 }
-static uint32_t accent(void) { return settings_current()->theme ? rgb(148, 112, 59) : rgb(35, 82, 100); }
-static void text(int x, int y, const char *s) { gui_text(screen, x, y, s, GUI_SMALL, rgb(202, 222, 238)); }
+static uint32_t accent(void) { return shell_palette(screen).hover; }
+static void text(int x, int y, const char *s) {
+    gui_text(screen, x, y, s, GUI_SMALL, shell_palette(screen).text);
+}
 static void clipped(int x, int y, int width, const char *s) {
     char out[FILE_PATH];
     unsigned i = 0;
@@ -264,18 +281,17 @@ static void append_number(char *to, uint64_t n) {
     append(to, out);
 }
 static void button(GuiRect r, const char *s) {
-    gui_round_rect(screen, r, 8, rgb(30, 51, 69), 255);
+    gui_round_rect(screen, r, 8, shell_palette(screen).surface, 255);
     clipped(r.x + 10, r.y + 10, r.width - 20, s);
 }
 static void icon(int x, int y, int directory) {
-    if (directory) {
-        gui_round_rect(screen, (GuiRect){x + 1, y + 1, 12, 7}, 2, rgb(187, 149, 77), 255);
-        gui_round_rect(screen, (GuiRect){x, y + 6, 24, 16}, 4, rgb(226, 195, 130), 255);
-    } else {
-        gui_round_rect(screen, (GuiRect){x + 3, y, 17, 24}, 3, rgb(123, 188, 203), 255);
-        for (int i = 0; i < 3; ++i)
-            gui_line(screen, x + 7, y + 7 + i * 5, x + 16, y + 7 + i * 5, 1, rgb(29, 65, 83));
-    }
+    shell_icon(screen, directory ? 6 : SHELL_ICON_DOCUMENT, (GuiRect){x, y, 24, 24});
+}
+static void tool_button(GuiRect r, const char *label, unsigned id, int enabled) {
+    ShellPalette p = shell_palette(screen);
+    gui_round_rect(screen, r, 9, enabled ? p.surface : p.background, 255);
+    shell_icon(screen, id, (GuiRect){r.x + 5, r.y + 6, 22, 22});
+    gui_text(screen, r.x + 32, r.y + 10, label, GUI_SMALL, enabled ? p.text : p.muted);
 }
 static GuiRect crumb_rect[FILE_COUNT + 1];
 static unsigned crumb_id[FILE_COUNT + 1], crumb_count;
@@ -339,6 +355,9 @@ static void draw(const BootInfo *s, GuiRect w) {
     screen = s;
     if (seen_revision != apps_document_revision())
         refresh();
+    ShellPalette palette = shell_palette(screen);
+    gui_round_rect(screen, (GuiRect){w.x + 8, w.y + 55, w.width - 16, w.height - 64}, 12,
+                   palette.background, 255);
     unsigned per = rows(w);
     if (page && page * per >= count)
         page = count ? (count - 1) / per : 0;
@@ -347,11 +366,15 @@ static void draw(const BootInfo *s, GuiRect w) {
     const char *tools[] = {"Up", "New folder", "New note", "Trash", "Refresh"};
     int widths[] = {54, 118, 118, 90, 90}, left = w.x + 16;
     for (unsigned i = 0; i < 5; ++i) {
-        button((GuiRect){left, w.y + 65, widths[i], 34}, tools[i]);
+        const unsigned ids[] = {SHELL_ICON_UP, SHELL_ICON_NEW_FOLDER, SHELL_ICON_NEW_NOTE, SHELL_ICON_TRASH,
+                                SHELL_ICON_REFRESH};
+        tool_button((GuiRect){left, w.y + 65, widths[i], 34}, tools[i], ids[i],
+                    storage_result == FILE_OK || i == 4);
         left += widths[i] + 8;
     }
     breadcrumbs(w, 1);
-    gui_line(screen, w.x + 16, w.y + 150, w.x + w.width - 16, w.y + 150, 1, rgb(40, 59, 79));
+    gui_line(screen, w.x + 16, w.y + 150, w.x + w.width - 16, w.y + 150, 1, shell_palette(screen).border);
+    gui_round_rect(screen, (GuiRect){w.x + 16, w.y + 152, w.width - 32, 27}, 7, palette.surface, 255);
     text(w.x + 52, w.y + 160, "Name");
     text(w.x + w.width - 226, w.y + 160, "Type");
     text(w.x + w.width - 112, w.y + 160, "Size");
@@ -370,8 +393,16 @@ static void draw(const BootInfo *s, GuiRect w) {
         }
         text(w.x + w.width - 112, y + 11, size);
     }
-    if (!count)
-        text(w.x + 28, w.y + 201, trash ? "Trash is empty" : "This folder is empty");
+    if (!count) {
+        if (storage_result != FILE_OK) {
+            clipped(w.x + 28, w.y + 194, w.width - 56,
+                    storage_result == FILE_UNAVAILABLE ? "No documents storage is mounted"
+                                                       : files_error(storage_result));
+            clipped(w.x + 28, w.y + 220, w.width - 56,
+                    "Install YAAI OS, then boot with the system VDI attached.");
+        } else
+            text(w.x + 28, w.y + 201, trash ? "Trash is empty" : "This folder is empty");
+    }
     FileUsage u;
     status_line[0] = 0;
     if (fs->usage(&u) == FILE_OK) {
@@ -385,6 +416,8 @@ static void draw(const BootInfo *s, GuiRect w) {
         append(status_line, " MiB volume");
     } else
         append(status_line, "Documents storage unavailable");
+    gui_round_rect(screen, (GuiRect){w.x + 16, w.y + w.height - 88, w.width - 32, 48}, 10, palette.surface,
+                   255);
     clipped(w.x + 18, w.y + w.height - 70, w.width - 204, status_line);
     button((GuiRect){w.x + w.width - 172, w.y + w.height - 78, 68, 30}, "Prev");
     button((GuiRect){w.x + w.width - 96, w.y + w.height - 78, 68, 30}, "Next");
@@ -392,7 +425,7 @@ static void draw(const BootInfo *s, GuiRect w) {
     if (context_open) {
         unsigned n = trash ? 2 : 6;
         gui_shadow(screen, context, 10);
-        gui_round_rect(screen, context, 10, rgb(26, 45, 63), 255);
+        gui_round_rect(screen, context, 10, shell_palette(screen).surface, 255);
         const char *normal[] = {"Open",          "Rename",     "Move to folder",
                                 "Move to Trash", "New folder", "New note"};
         const char *deleted[] = {"Restore", "Delete permanently"};
@@ -404,7 +437,7 @@ static void draw(const BootInfo *s, GuiRect w) {
         gui_round_rect(screen, (GuiRect){w.x + 1, w.y + 53, w.width - 2, w.height - 54}, 0, rgb(3, 10, 19),
                        180);
         gui_shadow(screen, p, 14);
-        gui_round_rect(screen, p, 14, rgb(22, 39, 57), 255);
+        gui_round_rect(screen, p, 14, shell_palette(screen).background, 255);
         const char *titles[] = {
             "", "New folder", "Rename item", "Move to folder", "Move to Trash?", "Delete permanently?"};
         text(p.x + 18, p.y + 20, titles[dialog]);
@@ -414,7 +447,8 @@ static void draw(const BootInfo *s, GuiRect w) {
                 : dialog == 5 ? "Type DELETE. This cannot be undone."
                               : "Letters, numbers, dot, dash and underscore");
         if (dialog != 4) {
-            gui_round_rect(screen, (GuiRect){p.x + 18, p.y + 83, p.width - 36, 37}, 7, rgb(9, 23, 37), 255);
+            gui_round_rect(screen, (GuiRect){p.x + 18, p.y + 83, p.width - 36, 37}, 7,
+                           shell_palette(screen).surface, 255);
             clipped(p.x + 29, p.y + 96, p.width - 58, input);
         }
         clipped(p.x + 18, p.y + 135, p.width - 36, message);
