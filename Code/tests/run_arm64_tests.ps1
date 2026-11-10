@@ -9,7 +9,7 @@ $flags = @('--target=aarch64-pc-windows-msvc','-std=c11','-Wall','-Wextra','-Wer
 & "$llvmBin\clang.exe" @flags -DYAAI_LIVE_BOOT -Dkernel_main=arm_probe_main -c boot.c -o "$testDirectory\boot_probe.obj"
 if ($LASTEXITCODE -ne 0) { throw 'ARM64 test loader compilation failed.' }
 $objects = @("$testDirectory\boot_probe.obj")
-foreach ($source in @('memory_test','clock_test','gui_test','input_events_test','storage_test','settings_test','display_mode_test','files_test','volumes_test','editor_test','folders_test','apps_test','browser_test','boot_update_test','arm_boot_test')) {
+foreach ($source in @('memory_test','clock_test','gui_test','input_events_test','storage_test','settings_test','settings_ui_test','display_mode_test','files_test','volumes_test','editor_test','folders_test','apps_test','browser_test','boot_update_test','arm_boot_test')) {
   & "$llvmBin\clang.exe" @flags -c "tests\$source.c" -o "$testDirectory\$source.obj"
   if ($LASTEXITCODE -ne 0) { throw "$source compilation failed." }
   $objects += "$testDirectory\$source.obj"

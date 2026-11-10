@@ -243,26 +243,28 @@ static void draw_dock(void)
 static void chrome(int id, Rect window, const char *title)
 {
     int maximized=wm.layout[id]==WINDOW_MAXIMIZED;
+    int settings_style=id==APP_SETTINGS;
+    uint32_t controls=settings_style?rgb(80,96,114):rgb(170,196,215);
     if(!maximized)gui_shadow(&canvas,window,20);
-    gui_round_rect(&canvas,window,maximized?0:20,rgb(61,81,103),220);
-    gui_round_rect(&canvas,(Rect){window.x + 1,window.y + 1,window.width - 2,window.height - 2},maximized?0:19,rgb(14,23,39),250);
-    label(window.x + 25,window.y + 15,title,GUI_BODY,rgb(218,232,247));
-    gui_line(&canvas,window.x + 20,window.y + 51,window.x + window.width - 21,window.y + 51,1,rgb(36,52,73));
+    gui_round_rect(&canvas,window,maximized?0:20,settings_style?rgb(204,214,226):rgb(61,81,103),220);
+    gui_round_rect(&canvas,(Rect){window.x + 1,window.y + 1,window.width - 2,window.height - 2},maximized?0:19,settings_style?rgb(244,246,250):rgb(14,23,39),250);
+    label(window.x + 25,window.y + 15,title,GUI_BODY,settings_style?rgb(31,43,61):rgb(218,232,247));
+    gui_line(&canvas,window.x + 20,window.y + 51,window.x + window.width - 21,window.y + 51,1,settings_style?rgb(224,230,238):rgb(36,52,73));
     int x = window.x + window.width - 35, y = window.y + 25;
-    gui_round_rect(&canvas,(Rect){x - 12,y - 12,24,24},12,hovered == 100*id+4 ? rgb(143,69,78) : rgb(57,47,64),255);
-    gui_line(&canvas,x - 4,y - 4,x + 4,y + 4,1,rgb(236,190,192));
-    gui_line(&canvas,x + 4,y - 4,x - 4,y + 4,1,rgb(236,190,192));
-    gui_line(&canvas,x - 82,y + 3,x - 70,y + 3,2,rgb(170,196,215));
+    gui_round_rect(&canvas,(Rect){x - 12,y - 12,24,24},12,hovered == 100*id+4 ? rgb(143,69,78) : settings_style?rgb(224,229,237):rgb(57,47,64),255);
+    gui_line(&canvas,x - 4,y - 4,x + 4,y + 4,1,settings_style?rgb(89,102,121):rgb(236,190,192));
+    gui_line(&canvas,x + 4,y - 4,x - 4,y + 4,1,settings_style?rgb(89,102,121):rgb(236,190,192));
+    gui_line(&canvas,x - 82,y + 3,x - 70,y + 3,2,controls);
     int bx=x-40;
     if(hovered==100*id+13)gui_round_rect(&canvas,(Rect){bx-15,y-15,30,30},8,rgb(46,72,92),255);
     if(wm.layout[id]==WINDOW_MAXIMIZED) {
-        gui_line(&canvas,bx-3,y-6,bx+6,y-6,1,rgb(170,196,215));
-        gui_line(&canvas,bx+6,y-6,bx+6,y+3,1,rgb(170,196,215));
+        gui_line(&canvas,bx-3,y-6,bx+6,y-6,1,controls);
+        gui_line(&canvas,bx+6,y-6,bx+6,y+3,1,controls);
     }
-    gui_line(&canvas,bx-6,y-3,bx+3,y-3,1,rgb(170,196,215));
-    gui_line(&canvas,bx-6,y-3,bx-6,y+6,1,rgb(170,196,215));
-    gui_line(&canvas,bx+3,y-3,bx+3,y+6,1,rgb(170,196,215));
-    gui_line(&canvas,bx-6,y+6,bx+3,y+6,1,rgb(170,196,215));
+    gui_line(&canvas,bx-6,y-3,bx+3,y-3,1,controls);
+    gui_line(&canvas,bx-6,y-3,bx-6,y+6,1,controls);
+    gui_line(&canvas,bx+3,y-3,bx+3,y+6,1,controls);
+    gui_line(&canvas,bx-6,y+6,bx+3,y+6,1,controls);
     gui_line(&canvas,window.x + window.width - 22,window.y + window.height - 9,
              window.x + window.width - 9,window.y + window.height - 22,2,rgb(106,146,164));
 }
@@ -458,7 +460,7 @@ static void click(int x, int y)
     if (target == 1) { menu_open = !menu_open; scene_dirty = 1; return; }
     if (menu_open) { menu_open = 0; scene_dirty = 1; }
     if (target == 2 || target == 5 || target == 7) open_window(1);
-    else if (target == 3 || target == 6 || target == 8) { settings_app_select(0); open_window(2); }
+    else if (target == 3 || target == 6 || target == 8) { settings_app_select(6); open_window(2); }
     else if (target == 9 || target == 10 || target == 11) open_window(APP_FILES);
     else if (target == 17 || target == 18) open_window(APP_NOTES);
     else if (target == 12) open_window(4);
@@ -491,7 +493,7 @@ _Noreturn void desktop_run(const BootInfo *boot)
     terminal_window = (Rect){0,window_top,minimum(960,width - 96),minimum(560,maximum_height)};
     terminal_window.x = (width - terminal_window.width) / 2;
     int settings_top=height<720?24:window_top;
-    system_window = (Rect){0,settings_top,minimum(820,width - 48),minimum(560,height-settings_top-108)};
+    system_window = (Rect){0,settings_top,minimum(1160,width - 48),minimum(800,height-settings_top-108)};
     system_window.x = (width - system_window.width) / 2;
     notes_window = (Rect){0,window_top,minimum(860,width - 96),minimum(520,maximum_height)};
     notes_window.x=(width-notes_window.width)/2;
@@ -559,7 +561,7 @@ _Noreturn void desktop_run(const BootInfo *boot)
                 power_error = 0; menu_open = dragging = resizing = 0; scene_dirty = 1; continue;
             }
             if (key == 1) open_window(1);
-            else if (key == 2) { settings_app_select(0); open_window(2); }
+            else if (key == 2) { settings_app_select(6); open_window(2); }
             else if (key == 3) { settings_app_select(5); open_window(2); }
             else if (key == 4) open_window(APP_FILES);
             else if (key == 30) open_window(APP_NOTES);

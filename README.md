@@ -104,7 +104,7 @@ A power loss during that one-time replacement may require booting installer medi
 again; retain the powered-off VDI backup. This is a prototype recovery mechanism,
 not a guarantee against every firmware, filesystem or physical-storage failure.
 
-The file-manager split is on `codex/file-manager`; Settings changes are on `codex/settings-app`; window-control changes are on `codex/window-controls`; the installer/app milestones are on `codex/single-disk-app-framework`.
+The Settings dashboard is on `codex/settings-dashboard`; the file-manager split is on `codex/file-manager`; Settings changes are on `codex/settings-app`; window-control changes are on `codex/window-controls`; the installer/app milestones are on `codex/single-disk-app-framework`.
 Use Git revert on the feature commit to undo a change while keeping history.
 Git does not back up ignored VDIs or documents stored inside them.
 
@@ -159,7 +159,20 @@ the window. In a filename/path dialog, Ctrl+A selects the existing value.
 ## Settings
 
 Open **Settings** from the dock, desktop menu, or **F2**. **F3** opens its Devices
-section. The app includes Display, Appearance, Sound, Date & time, About and Devices.
+section. Home opens by default; sections include Display, Personalization, Sound, Time & language, About and Devices.
+
+The Settings app uses a light, card-based dashboard with an icon sidebar and a
+Home page. Home links to real display, audio, device and personalization controls;
+wallpaper thumbnails apply the existing saved backgrounds. Device cards show
+reported availability, not simulated connectivity.
+
+Click Find a setting (or press /), type a keyword and click a result or press
+Enter to open its category. Search is case-insensitive; Ctrl+A selects the query
+for replacement, and Escape clears search. The content pane clips its rendering
+and scrolls with Page Up/Down, arrow keys, Home/End, or the draggable scrollbar.
+The sidebar stays fixed. Narrow windows use a single column of Home cards.
+
+
 
 Wallpaper, Ocean/Amber accents, volume, mute and country/time-zone changes apply
 immediately. Resolution choices (Auto, 1024 x 768, 1280 x 720, 1920 x 1080) apply
@@ -172,7 +185,7 @@ firmware/NVRAM file to retain preferences when moving the VM; they are not carri
 by the system VDI alone. Existing wallpaper/volume/time-zone records remain
 compatible. The status line reports when changes could not be saved.
 
-Keyboard: Tab cycles sections, 1-6 selects a section, and A-G chooses its displayed
+Keyboard: Tab cycles Home/sections, 1-6 selects a section, 7 opens Home, and A-G chooses a section's displayed
 options in row order. Click controls normally with the pointer. Sound playback
 requires a supported output device. Devices reports actual availability rather
 than enabling unsupported Wi-Fi, SIM or battery hardware.

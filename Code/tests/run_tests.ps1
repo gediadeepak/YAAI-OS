@@ -9,7 +9,7 @@ New-Item -ItemType Directory -Force "$testDirectory\esp\EFI\BOOT" | Out-Null
 & "$llvmBin\clang.exe" --target=x86_64-pc-windows-msvc -std=c11 -Wall -Wextra -Werror -ffreestanding -fno-stack-protector -mno-red-zone -mno-stack-arg-probe -DSHRI_TEST_BOOT -Dkernel_main=memory_probe_main -c boot.c -o "$testDirectory\boot_probe.obj"
 if ($LASTEXITCODE -ne 0) { throw 'Test loader compilation failed.' }
 $testObjects = @("$testDirectory\boot_probe.obj")
-foreach ($source in @('memory_test', 'clock_test', 'mouse_test', 'gui_test', 'network_test', 'input_events_test', 'storage_test','settings_test', 'display_mode_test', 'files_test','volumes_test','editor_test','folders_test','apps_test','browser_test','boot_update_test', 'memory_boot_test')) {
+foreach ($source in @('memory_test', 'clock_test', 'mouse_test', 'gui_test', 'network_test', 'input_events_test', 'storage_test','settings_test','settings_ui_test', 'display_mode_test', 'files_test','volumes_test','editor_test','folders_test','apps_test','browser_test','boot_update_test', 'memory_boot_test')) {
   & "$llvmBin\clang.exe" --target=x86_64-pc-windows-msvc -std=c11 -Wall -Wextra -Werror -ffreestanding -fno-stack-protector -mno-red-zone -mno-stack-arg-probe -c "tests\$source.c" -o "$testDirectory\$source.obj"
   if ($LASTEXITCODE -ne 0) { throw "$source compilation failed." }
   $testObjects += "$testDirectory\$source.obj"
