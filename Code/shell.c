@@ -144,13 +144,15 @@ void shell_key(char character)
 
 _Noreturn void shell_run(const BootInfo *boot)
 {
-    if (!platform_input_initialize(boot->width,boot->height)) {
+    int serial_only = !platform_input_initialize(boot->width, boot->height);
+    if (serial_only && !platform_serial_console_available()) {
         console_write("PLATFORM INPUT INITIALIZATION FAILED.\n");
         platform_halt();
     }
     shell_begin(boot);
+    if (serial_only) console_write("Using COM1 for input. Type help in the serial terminal.\n");
     for (;;) {
-        shell_key(platform_key_read());
+        shell_key(serial_only ? platform_serial_console_read() : platform_key_read());
         platform_idle();
     }
 }

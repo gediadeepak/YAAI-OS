@@ -1,4 +1,5 @@
 #include "file_app.h"
+#include "notifications.h"
 #include "apps.h"
 #include "editor.h"
 #include "screen.h"
@@ -176,6 +177,7 @@ static void save(void) {
     FileResult r = fs->list(editor_parent, 0, entries, FILE_COUNT, &count);
     if (r != FILE_OK) {
         message = files_error(r);
+        notification_post("Save failed", message);
         return;
     }
     for (unsigned i = 0; i < count; ++i)
@@ -187,6 +189,7 @@ static void save(void) {
     r = fs->write_at(editor_parent, filename, text, length);
     if (r != FILE_OK) {
         message = files_error(r);
+        notification_post("Save failed", message);
         return;
     }
     if (fs->list(editor_parent, 0, entries, FILE_COUNT, &count) == FILE_OK)
@@ -197,6 +200,7 @@ static void save(void) {
     mark_clean();
     apps_documents_changed();
     message = "Saved to disk";
+    notification_post("Note saved", filename);
 }
 int file_app_has_changes(void) { return dirty; }
 int file_app_save_pending(void) {

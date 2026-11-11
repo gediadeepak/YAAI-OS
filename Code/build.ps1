@@ -9,7 +9,7 @@ if (-not (Test-Path 'assets\ui-fonts.bin') -or -not (Test-Path 'assets\wallpaper
 }
 $compilerFlags = @('-std=c11','-O2','-Wall','-Wextra','-Werror','-ffreestanding','-fno-builtin','-fno-stack-protector','-mno-stack-arg-probe','-I.')
 $sources = [ordered]@{}
-foreach ($source in @('boot','kernel','console','shell','memory','runtime','setup','clock','desktop','shell_ui','quick_settings','gui','input_events','storage','settings','display_mode','files','file_app','file_browser','volumes','power','editor','window_manager','apps','notes_app','calculator','calculator_app','settings_app','boot_update')) { $sources[$source] = "$source.c" }
+foreach ($source in @('boot','kernel','console','shell','memory','runtime','setup','clock','desktop','shell_ui','quick_settings','notifications','gui','input_events','storage','settings','display_mode','files','file_app','file_browser','volumes','power','editor','window_manager','apps','notes_app','calculator','calculator_app','settings_app','boot_update')) { $sources[$source] = "$source.c" }
 $sources['platform_compat'] = 'platform/compat.c'
 $sources['platform_store'] = 'platform/uefi_store.c'
 $assembly = [ordered]@{ gui_assets = 'gui_assets.S' }

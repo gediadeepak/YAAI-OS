@@ -18,14 +18,41 @@ static void port_write(uint16_t port, uint8_t value) { __asm__ volatile("outb %0
 static uint8_t port_read(uint16_t port) { uint8_t value; __asm__ volatile("inb %1,%0" : "=a"(value) : "Nd"(port)); return value; }
 void platform_serial_write(const char *text)
 {
-    port_write(0x3f9,0); port_write(0x3fb,0x80); port_write(0x3f8,1);
-    port_write(0x3f9,0); port_write(0x3fb,3); port_write(0x3fa,0xc7); port_write(0x3fc,0x0b);
+    static int initialized;
+    if (!initialized) {
+        port_write(0x3f9,0); port_write(0x3fb,0x80); port_write(0x3f8,1);
+        port_write(0x3f9,0); port_write(0x3fb,3); port_write(0x3fa,0xc7); port_write(0x3fc,0x0b);
+        initialized = 1;
+    }
     for (; *text; ++text) {
         unsigned timeout = 1000000;
         while (!(port_read(0x3fd) & 0x20) && --timeout) platform_idle();
         if (timeout) port_write(0x3f8,(uint8_t)*text);
     }
 }
+int platform_serial_console_available(void)
+{
+    const uint16_t scratch = 0x3ff;
+    uint8_t previous = port_read(scratch);
+    port_write(scratch, 0x5a);
+    int first = port_read(scratch) == 0x5a;
+    port_write(scratch, 0xa5);
+    int second = port_read(scratch) == 0xa5;
+    port_write(scratch, previous);
+    return first && second;
+}
+
+char platform_serial_console_read(void)
+{
+    uint8_t status = port_read(0x3fd);
+    if (status == 0xff || !(status & 1)) return 0;
+    char key = (char)port_read(0x3f8);
+    if (status & 0x1e) return 0;
+    if (key == '\r') return '\n';
+    if (key == 127) return '\b';
+    return key;
+}
+
 void platform_wait_frame(void)
 {
     uint8_t gate = port_read(0x61);

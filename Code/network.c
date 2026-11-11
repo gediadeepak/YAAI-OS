@@ -1,4 +1,5 @@
 #include "network.h"
+#include "notifications.h"
 #include "devices.h"
 #include "memory.h"
 #include "screen.h"
@@ -115,8 +116,10 @@ static void dhcp(const uint8_t *p, unsigned length)
     if (kind == 2 && phase == 1 && supplied && (supplied >> 24) < 224) {
         offered = supplied; server = remote; phase = 2; ticks = retries = 0; discover(1);
     } else if (kind == 5 && phase == 2 && remote == server && supplied == offered && duration >= 60) {
+        int address_changed = ip != supplied;
         ip = supplied; phase = 3; age = 0; lease = duration > 86400 ? 86400 : duration;
         address(ip); status_text = "Network: Ethernet / DHCP configured";
+        if (address_changed) notification_post("Network connected", address_text);
         serial_write("NETWORK: DHCP address "); serial_write(address_text); serial_write("\r\n");
     } else if (kind == 6 && phase == 2 && remote == server) {
         phase = 1; ip = 0; ticks = retries = 0; discover(0);

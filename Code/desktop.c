@@ -18,6 +18,7 @@
 #include "settings_app.h"
 #include "shell_ui.h"
 #include "quick_settings.h"
+#include "notifications.h"
 
 
 
@@ -42,6 +43,8 @@ static uint64_t hover_since;
 static QuickSettings quick;
 static Rect quick_panel;
 static int quick_open;
+static int notifications_open;
+static Rect notification_bell, notification_panel;
 static int widgets_visible = 1;
 static DateTime widget_time;
 static int widget_clock_ready;
@@ -340,7 +343,21 @@ static void scene(void)
             }
         }
     }
-    if(!fullscreen_window()) {clock_widget(1);draw_dock();}
+    if (!fullscreen_window()) {
+        clock_widget(1);
+        draw_dock();
+        Rect bell = notification_bell;
+        gui_round_rect(&canvas, bell, 16, hovered == 50 ? palette.hover : palette.background, 255);
+        int x = bell.x + bell.width / 2, y = bell.y + bell.height / 2;
+        gui_round_rect(&canvas, (Rect){x-7,y-10,14,16}, 7, palette.text, 255);
+        gui_line(&canvas, x-9, y+5, x+9, y+5, 2, palette.text);
+        gui_round_rect(&canvas, (Rect){x-2,y+8,4,4}, 2, palette.text, 255);
+        if (notification_unread())
+            gui_round_rect(&canvas, (Rect){x+8,y-13,8,8}, 4, palette.accent, 255);
+        if (notifications_open) notification_history_draw(&canvas, notification_panel);
+        else if (!menu_open && !context_open && !quick_open && !power_dialog)
+            notification_toast_draw(&canvas, (Rect){notification_panel.x, notification_panel.y, notification_panel.width, 56});
+    }
     if(menu_open)shell_launcher_draw(&canvas,&launcher,menu);
     if (context_open) {
         gui_shadow(&canvas,context_menu,14);
@@ -409,6 +426,7 @@ static int target_at(int x, int y)
     if(menu_open&&inside(menu,x,y))return shell_launcher_hit(&launcher,menu,x,y);
     if(!fullscreen_window()) {
     if (inside(clock_panel,x,y)) return 49;
+    if (inside(notification_bell,x,y)) return 50;
     if (inside(brand_button,x,y)) return 1;
     if (inside(terminal_button,x,y)) return 2;
     if (inside(system_button,x,y)) return 3;
@@ -467,6 +485,21 @@ static void click(int x, int y)
     if (power_dialog) {
         if (target == 31) { power_dialog = 0; power_error = 0; scene_dirty = 1; }
         else if (target == 32) confirm_power();
+        return;
+    }
+    if (notifications_open) {
+        if (target == 50 || !inside(notification_panel, x, y)) {
+            notifications_open = 0;
+            scene_dirty = 1;
+        }
+        return;
+    }
+    if (target == 50) {
+        close_quick();
+        menu_open = context_open = 0;
+        notifications_open = 1;
+        notification_mark_read();
+        scene_dirty = 1;
         return;
     }
     if(target==49){toggle_quick();return;}
@@ -560,6 +593,8 @@ _Noreturn void desktop_run(const BootInfo *boot)
     calculator_button=(Rect){dock.x+336,dock.y+10,56,56};
     about_button=(Rect){dock.x+400,dock.y+10,56,56};
     clock_panel=(Rect){width-254,24,226,64};
+    notification_bell = (Rect){clock_panel.x - 60, 30, 48, 52};
+    notification_panel = (Rect){width - 366, 100, 338, minimum(height - 112, 422)};
     quick_panel=quick_settings_bounds((unsigned)width,(unsigned)height);
     menu=shell_launcher_bounds((unsigned)width,(unsigned)height,dock);
     shell_launcher_init(&launcher);
@@ -567,8 +602,7 @@ _Noreturn void desktop_run(const BootInfo *boot)
     platform_network_initialize();
     if (!platform_input_initialize(boot->width,boot->height)) {
         console_restore_fullscreen();
-        console_write("PLATFORM INPUT INITIALIZATION FAILED.\n");
-        platform_halt();
+        shell_run(boot);
     }
 
     create_wallpaper();
@@ -584,6 +618,10 @@ _Noreturn void desktop_run(const BootInfo *boot)
         if(last_zone!=settings_current()->zone){last_zone=settings_current()->zone;refresh_clock();scene_dirty=1;}
         if(last_color!=settings_current()->color_mode){last_color=settings_current()->color_mode;scene_dirty=1;}
         apps_tick();
+        if (notification_tick()) {
+            if (notifications_open) notification_mark_read();
+            scene_dirty = 1;
+        }
         platform_network_poll();
         PlatformPointer old_pointer = pointer;
         int terminal_dirty = 0, clock_dirty = 0;
@@ -593,6 +631,14 @@ _Noreturn void desktop_run(const BootInfo *boot)
                 if (key == 27) { power_dialog = 0; power_error = 0; scene_dirty = 1; }
                 else if (key == '\n') confirm_power();
                 continue;
+            }
+            if (notifications_open) {
+                if (key == 27 || key == DESKTOP_QUICK || key == 17 ||
+                    key == DESKTOP_MAXIMIZE || key == DESKTOP_NEXT || key == DESKTOP_PREVIOUS) {
+                    notifications_open = 0;
+                    scene_dirty = 1;
+                    if (key == 27) continue;
+                } else continue;
             }
             if(key==DESKTOP_QUICK){toggle_quick();continue;}
             if(key==DESKTOP_SWITCH_END) {windows_cycle_end(&wm);continue;}
@@ -635,13 +681,13 @@ _Noreturn void desktop_run(const BootInfo *boot)
         }
         PlatformPointer event;
         for (unsigned count = 0; count < 64 && platform_pointer_read(&event); ++count) {
-            int popup_pointer=quick_open;
-            if (!quick_open && !menu_open && !power_dialog && (event.buttons & 2) && !(pointer.buttons & 2) && target_at(event.x,event.y) < 100) {
+            int popup_pointer=quick_open || notifications_open;
+            if (!notifications_open && !quick_open && !menu_open && !power_dialog && (event.buttons & 2) && !(pointer.buttons & 2) && target_at(event.x,event.y) < 100) {
                 context_menu = (Rect){minimum(event.x,width - 258),minimum(event.y,height - 194),250,192};
                 context_open = 1; menu_open = 0; scene_dirty = 1;
                 serial_write("DESKTOP: context menu opened\r\n");
             }
-            if(!quick_open&&!power_dialog&&(event.buttons&2)&&!(pointer.buttons&2)){int target=target_at(event.x,event.y);if(target>=100)focus(target/100);}
+            if(!notifications_open&&!quick_open&&!power_dialog&&(event.buttons&2)&&!(pointer.buttons&2)){int target=target_at(event.x,event.y);if(target>=100)focus(target/100);}
             if ((event.buttons & 1) && !(pointer.buttons & 1)) click(event.x,event.y);
             if(quick_open){QuickInfo info=quick_settings_info();if(quick_settings_pointer(&quick,quick_panel,&info,event.x,event.y,event.buttons))scene_dirty=1;}
             if (!(event.buttons & 1)) {

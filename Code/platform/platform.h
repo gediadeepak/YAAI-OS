@@ -13,6 +13,8 @@ void platform_disable_interrupts(void);
 _Noreturn void platform_halt(void);
 void platform_idle(void);
 void platform_serial_write(const char *text);
+int platform_serial_console_available(void);
+char platform_serial_console_read(void);
 void platform_wait_frame(void);
 int platform_clock_utc(DateTime *time);
 int platform_input_initialize(unsigned width, unsigned height);

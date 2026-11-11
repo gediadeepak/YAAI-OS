@@ -64,6 +64,8 @@ int platform_clock_utc(DateTime *time)
     time->year = (int)year; time->month = (int)month; time->day = (int)days + 1; return 1;
 }
 int platform_input_initialize(unsigned width, unsigned height) { virtio_input_initialize(width,height); return 1; }
+int platform_serial_console_available(void) { return 0; }
+char platform_serial_console_read(void) { return 0; }
 int platform_key_pending(void) { virtio_input_poll(); return input_events_key_pending() || !(UART[6] & 0x10); }
 char platform_key_read(void)
 {

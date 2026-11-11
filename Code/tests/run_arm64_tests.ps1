@@ -14,7 +14,7 @@ foreach ($source in @('memory_test','clock_test','gui_test','input_events_test',
   if ($LASTEXITCODE -ne 0) { throw "$source compilation failed." }
   $objects += "$testDirectory\$source.obj"
 }
-$objects += @('kernel','console','shell','memory','runtime','setup','clock','desktop','shell_ui','quick_settings','gui','gui_assets','platform_compat','platform_hal','platform_vectors','input_events','virtio_input','storage','settings','platform_store','display_mode','files','platform_disk','file_app','file_browser','volumes','power','editor','window_manager','apps','notes_app','calculator','calculator_app','settings_app','boot_update') | ForEach-Object { "build\arm64\$_.obj" }
+$objects += @('kernel','console','shell','memory','runtime','setup','clock','desktop','shell_ui','quick_settings','notifications','gui','gui_assets','platform_compat','platform_hal','platform_vectors','input_events','virtio_input','storage','settings','platform_store','display_mode','files','platform_disk','file_app','file_browser','volumes','power','editor','window_manager','apps','notes_app','calculator','calculator_app','settings_app','boot_update') | ForEach-Object { "build\arm64\$_.obj" }
 & "$llvmBin\lld-link.exe" /subsystem:efi_application /entry:efi_main /nodefaultlib "/out:$testDirectory\esp\EFI\BOOT\BOOTAA64.EFI" @objects
 if ($LASTEXITCODE -ne 0) { throw 'ARM64 test linking failed.' }
 foreach ($ram in @('128M','512M')) {

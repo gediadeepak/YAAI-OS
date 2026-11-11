@@ -3,6 +3,8 @@
 Yet Another AI Operating System: a custom C operating system with a graphical desktop.
 Development workspace: `G:\Project\YAAI-OS`.
 
+See the [developer guide](DEVELOPMENT.md) for the boot flow, source map, and debugging steps.
+
 ## Run on a PC virtual machine
 
 Install LLVM/LLD, QEMU, and optionally VirtualBox. In PowerShell:
@@ -266,3 +268,12 @@ Controls have hit areas at least 44 pixels high. The shared native panel uses
 stacked portrait and two-column landscape layouts, tested from 360x640 through
 1920x1080. This is UI preparation for a mobile port, not phone boot or touchscreen
 driver support. A physical phone still needs a compatible hardware backend.
+## Notifications
+
+Click the bell beside the desktop clock to see the six most recent notifications
+from the current session. A dot marks unread events. Press Escape or click outside
+the panel to close it. Notes reports saves and storage errors, and Ethernet reports
+a new DHCP address. A message can appear briefly as a toast on the desktop.
+Fullscreen hides the bell and toast while keeping events in history.
+
+For the Hyper-V serial console fallback, see the [COM1 console test](DEVELOPMENT.md#hyper-v-com1-console-test).
