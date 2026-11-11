@@ -42,6 +42,9 @@ static uint64_t hover_since;
 static QuickSettings quick;
 static Rect quick_panel;
 static int quick_open;
+static int widgets_visible = 1;
+static DateTime widget_time;
+static int widget_clock_ready;
 static void close_quick(void){quick_settings_cancel(&quick);quick_open=0;}
 static int menu_open, terminal_started, scene_dirty, hovered;
 static int dragging, resizing, drag_x, drag_y, wallpaper_style;
@@ -162,7 +165,9 @@ static void create_wallpaper(void)
 static void refresh_clock(void)
 {
     DateTime time;
-    if (!clock_local_time(settings_current()->zone,&time)) return;
+    widget_clock_ready = clock_local_time(settings_current()->zone, &time);
+    if (!widget_clock_ready) return;
+    widget_time = time;
     time_text[0] = (char)('0' + time.hour / 10); time_text[1] = (char)('0' + time.hour % 10);
     time_text[3] = (char)('0' + time.minute / 10); time_text[4] = (char)('0' + time.minute % 10);
     time_text[6] = (char)('0' + time.second / 10); time_text[7] = (char)('0' + time.second % 10);
@@ -185,6 +190,78 @@ static void clock_widget(int shadow)
     label(x+58,y+7,time_text,GUI_BODY,p.text);
     label(x+58,y+34,date_text,GUI_SMALL,p.muted);
 }
+static void widget_hand(int x, int y, int position, int radius, int thickness, uint32_t color)
+{
+    static const int points[12][2] = {
+        {0,-100}, {50,-87}, {87,-50}, {100,0}, {87,50}, {50,87},
+        {0,100}, {-50,87}, {-87,50}, {-100,0}, {-87,-50}, {-50,-87}
+    };
+    int start = position / 5, fraction = position % 5;
+    int end = (start + 1) % 12;
+    int dx = points[start][0] * (5 - fraction) + points[end][0] * fraction;
+    int dy = points[start][1] * (5 - fraction) + points[end][1] * fraction;
+    gui_line(&canvas, x, y, x + dx * radius / 500, y + dy * radius / 500, thickness, color);
+}
+
+static void draw_widgets(void)
+{
+    ShellPalette p = shell_palette(&canvas);
+    int x = clock_panel.x, y = clock_panel.y + clock_panel.height + 12;
+    int bottom = dock.y - 12;
+    Rect rail = {x, y, clock_panel.width, bottom - y};
+    gui_round_rect(&canvas, rail, 18, p.background, 238);
+    label(x + 18, y + 14, "Widgets", GUI_BODY, p.text);
+    y += 46;
+
+    Rect clock = {x + 12, y, rail.width - 24, 136};
+    gui_round_rect(&canvas, clock, 14, p.surface, 255);
+    int cx = x + rail.width / 2, cy = y + 68;
+    if (widget_clock_ready) {
+        gui_round_rect(&canvas, (Rect){cx - 57, cy - 57, 114, 114}, 57, p.border, 255);
+        gui_round_rect(&canvas, (Rect){cx - 55, cy - 55, 110, 110}, 55, p.background, 255);
+        for (int mark = 0; mark < 12; ++mark)
+            widget_hand(cx, cy, mark * 5, 49, 2, p.border);
+        gui_round_rect(&canvas, (Rect){cx - 44, cy - 44, 88, 88}, 44, p.background, 255);
+        widget_hand(cx, cy, widget_time.hour % 12 * 5 + widget_time.minute / 12, 28, 3, p.text);
+        widget_hand(cx, cy, widget_time.minute, 41, 2, p.text);
+        widget_hand(cx, cy, widget_time.second, 45, 1, p.accent);
+        gui_round_rect(&canvas, (Rect){cx - 3, cy - 3, 6, 6}, 3, p.accent, 255);
+    } else {
+        centered(clock, cy - 7, "Clock unavailable", GUI_SMALL, p.muted);
+    }
+    y += 148;
+
+    if (y + 62 <= bottom - 12) {
+        gui_round_rect(&canvas, (Rect){x + 12, y, rail.width - 24, 62}, 12, p.surface, 255);
+        label(x + 24, y + 10, "Date", GUI_SMALL, p.muted);
+        label(x + 24, y + 29, date_text, GUI_BODY, p.text);
+        y += 74;
+    }
+    if (y + 62 <= bottom - 12) {
+        gui_round_rect(&canvas, (Rect){x + 12, y, rail.width - 24, 62}, 12, p.surface, 255);
+        label(x + 24, y + 10, "Network address", GUI_SMALL, p.muted);
+        label(x + 24, y + 29, platform_network_address(), GUI_BODY, p.text);
+        y += 74;
+    }
+    if (y + 62 <= bottom - 12) {
+        gui_round_rect(&canvas, (Rect){x + 12, y, rail.width - 24, 62}, 12, p.surface, 255);
+        label(x + 24, y + 10, "Sound", GUI_SMALL, p.muted);
+        if (platform_audio_available()) {
+            unsigned level = settings_current()->volume;
+            Rect track = {x + 24, y + 36, rail.width - 48, 6};
+            gui_round_rect(&canvas, track, 3, p.border, 255);
+            if (level) {
+                track.width = track.width * (int)level / 100;
+                gui_round_rect(&canvas, track, 3, p.accent, 255);
+            } else {
+                label(x + 70, y + 10, "Muted", GUI_SMALL, p.text);
+            }
+        } else {
+            label(x + 24, y + 29, "Unavailable", GUI_SMALL, p.text);
+        }
+    }
+}
+
 static void draw_dock(void)
 {
     ShellPalette p=shell_palette(&canvas);
@@ -242,6 +319,7 @@ static void scene(void)
 {
     ShellPalette palette=shell_palette(&canvas);
     restore_wallpaper((Rect){0,0,(int)canvas.width,(int)canvas.height});
+    if (widgets_visible && !fullscreen_window()) draw_widgets();
     for (unsigned pass = 0; pass < wm.count; ++pass) {
         int window = order[pass];
         if (window && visible[window]) {
@@ -267,8 +345,9 @@ static void scene(void)
     if (context_open) {
         gui_shadow(&canvas,context_menu,14);
         gui_round_rect(&canvas,context_menu,14,palette.background,255);
-        const char *items[] = {"AI human wallpaper", "Midnight wallpaper", "Teal wallpaper", "Devices and sound"};
-        for (int index = 0; index < 4; ++index) {
+        const char *items[] = {"AI human wallpaper", "Midnight wallpaper", "Teal wallpaper", "Devices and sound",
+                               widgets_visible ? "Hide widgets" : "Show widgets"};
+        for (int index = 0; index < 5; ++index) {
             if (hovered == 20 + index)
                 gui_round_rect(&canvas,(Rect){context_menu.x + 6,context_menu.y + 6 + index * 36,238,34},8,palette.hover,255);
             label(context_menu.x + 16,context_menu.y + 15 + index * 36,items[index],GUI_SMALL,palette.text);
@@ -325,7 +404,7 @@ static int target_at(int x, int y)
     if(quick_open&&inside(quick_panel,x,y))return 48;
     if (context_open && inside(context_menu,x,y)) {
         int item = (y - context_menu.y - 6) / 36;
-        return item >= 0 && item < 4 ? 20 + item : 0;
+        return item >= 0 && item < 5 ? 20 + item : 0;
     }
     if(menu_open&&inside(menu,x,y))return shell_launcher_hit(&launcher,menu,x,y);
     if(!fullscreen_window()) {
@@ -401,9 +480,10 @@ static void click(int x, int y)
         else if(target&&target!=SHELL_SEARCH)activate_shell_target(target);
         return;
     }
-    if (target >= 20 && target <= 23) {
+    if (target >= 20 && target <= 24) {
         context_open = 0;
-        if (target == 23) { settings_app_select(5); open_window(2); }
+        if (target == 24) { widgets_visible = !widgets_visible; scene_dirty = 1; }
+        else if (target == 23) { settings_app_select(5); open_window(2); }
         else { wallpaper_style = target - 20; settings_wallpaper((unsigned)wallpaper_style); create_wallpaper(); scene_dirty = 1; }
         serial_write("DESKTOP: context action\r\n");
         return;
@@ -557,7 +637,7 @@ _Noreturn void desktop_run(const BootInfo *boot)
         for (unsigned count = 0; count < 64 && platform_pointer_read(&event); ++count) {
             int popup_pointer=quick_open;
             if (!quick_open && !menu_open && !power_dialog && (event.buttons & 2) && !(pointer.buttons & 2) && target_at(event.x,event.y) < 100) {
-                context_menu = (Rect){minimum(event.x,width - 258),minimum(event.y,height - 158),250,156};
+                context_menu = (Rect){minimum(event.x,width - 258),minimum(event.y,height - 194),250,192};
                 context_open = 1; menu_open = 0; scene_dirty = 1;
                 serial_write("DESKTOP: context menu opened\r\n");
             }
