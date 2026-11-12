@@ -270,8 +270,8 @@ stacked portrait and two-column landscape layouts, tested from 360x640 through
 driver support. A physical phone still needs a compatible hardware backend.
 ## Notifications
 
-Click the bell beside the desktop clock to see the six most recent notifications
-from the current session. A dot marks unread events. Press Escape or click outside
+Click Alerts in the widget bar or the bell beside the clock to see the six most recent notifications
+from the current session. Clear all removes the history and unread dot. Press Escape or click outside
 the panel to close it. Notes reports saves and storage errors, and Ethernet reports
 a new DHCP address. A message can appear briefly as a toast on the desktop.
 Fullscreen hides the bell and toast while keeping events in history.

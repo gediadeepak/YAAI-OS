@@ -44,7 +44,7 @@ static QuickSettings quick;
 static Rect quick_panel;
 static int quick_open;
 static int notifications_open;
-static Rect notification_bell, notification_panel;
+static Rect notification_bell, widget_bar, widget_alerts;
 static int widgets_visible = 1;
 static DateTime widget_time;
 static int widget_clock_ready;
@@ -211,9 +211,11 @@ static void draw_widgets(void)
     ShellPalette p = shell_palette(&canvas);
     int x = clock_panel.x, y = clock_panel.y + clock_panel.height + 12;
     int bottom = dock.y - 12;
-    Rect rail = {x, y, clock_panel.width, bottom - y};
+    Rect rail = widget_bar;
     gui_round_rect(&canvas, rail, 18, p.background, 238);
     label(x + 18, y + 14, "Widgets", GUI_BODY, p.text);
+    gui_round_rect(&canvas, widget_alerts, 8, hovered == 51 ? p.hover : p.surface, 255);
+    centered(widget_alerts, widget_alerts.y + 8, "Alerts", GUI_SMALL, p.text);
     y += 46;
 
     Rect clock = {x + 12, y, rail.width - 24, 136};
@@ -322,7 +324,7 @@ static void scene(void)
 {
     ShellPalette palette=shell_palette(&canvas);
     restore_wallpaper((Rect){0,0,(int)canvas.width,(int)canvas.height});
-    if (widgets_visible && !fullscreen_window()) draw_widgets();
+    if (widgets_visible && !notifications_open && !fullscreen_window()) draw_widgets();
     for (unsigned pass = 0; pass < wm.count; ++pass) {
         int window = order[pass];
         if (window && visible[window]) {
@@ -354,9 +356,9 @@ static void scene(void)
         gui_round_rect(&canvas, (Rect){x-2,y+8,4,4}, 2, palette.text, 255);
         if (notification_unread())
             gui_round_rect(&canvas, (Rect){x+8,y-13,8,8}, 4, palette.accent, 255);
-        if (notifications_open) notification_history_draw(&canvas, notification_panel);
+        if (notifications_open) notification_history_draw(&canvas, widget_bar, hovered == 52);
         else if (!menu_open && !context_open && !quick_open && !power_dialog)
-            notification_toast_draw(&canvas, (Rect){notification_panel.x, notification_panel.y, notification_panel.width, 56});
+            notification_toast_draw(&canvas, (Rect){widget_bar.x + widget_bar.width - 338, widget_bar.y, 338, 56});
     }
     if(menu_open)shell_launcher_draw(&canvas,&launcher,menu);
     if (context_open) {
@@ -418,6 +420,8 @@ static int target_at(int x, int y)
         if (inside((Rect){power_panel.x + power_panel.width - 196,power_panel.y + 168,172,40},x,y)) return 32;
         return 30;
     }
+    if (notifications_open && !fullscreen_window() &&
+        inside(notification_clear_button(widget_bar),x,y)) return 52;
     if(quick_open&&inside(quick_panel,x,y))return 48;
     if (context_open && inside(context_menu,x,y)) {
         int item = (y - context_menu.y - 6) / 36;
@@ -446,6 +450,7 @@ static int target_at(int x, int y)
         if (x >= window.x + window.width - 25 && y >= window.y + window.height - 25) return 100 * id + 11;
         return 100 * id + (y < window.y + 52 ? 10 : 12);
     }
+    if (widgets_visible && !fullscreen_window() && inside(widget_alerts,x,y)) return 51;
     return 0;
 }
 
@@ -488,13 +493,16 @@ static void click(int x, int y)
         return;
     }
     if (notifications_open) {
-        if (target == 50 || !inside(notification_panel, x, y)) {
+        if (target == 52) {
+            notification_clear();
+            scene_dirty = 1;
+        } else if (target == 50 || !inside(widget_bar, x, y)) {
             notifications_open = 0;
             scene_dirty = 1;
         }
         return;
     }
-    if (target == 50) {
+    if (target == 50 || target == 51) {
         close_quick();
         menu_open = context_open = 0;
         notifications_open = 1;
@@ -594,7 +602,8 @@ _Noreturn void desktop_run(const BootInfo *boot)
     about_button=(Rect){dock.x+400,dock.y+10,56,56};
     clock_panel=(Rect){width-254,24,226,64};
     notification_bell = (Rect){clock_panel.x - 60, 30, 48, 52};
-    notification_panel = (Rect){width - 366, 100, 338, minimum(height - 112, 422)};
+    widget_bar = (Rect){clock_panel.x, 100, clock_panel.width, dock.y - 112};
+    widget_alerts = (Rect){widget_bar.x + widget_bar.width - 82, widget_bar.y + 9, 70, 32};
     quick_panel=quick_settings_bounds((unsigned)width,(unsigned)height);
     menu=shell_launcher_bounds((unsigned)width,(unsigned)height,dock);
     shell_launcher_init(&launcher);
