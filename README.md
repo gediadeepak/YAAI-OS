@@ -110,6 +110,19 @@ Quick Settings is on `codex/quick-settings`; the searchable icon dock and launch
 Use Git revert on the feature commit to undo a change while keeping history.
 Git does not back up ignored VDIs or documents stored inside them.
 
+## Copy and paste in Files
+
+Select a document and press **Ctrl+C**, open a destination folder, then press
+**Ctrl+V**. The right-click menu also has **Copy** and **Paste**. Copy captures the
+saved bytes, so binary documents and empty files work too. The clipboard stays
+in memory for the current session.
+
+If a name is already in use, choose **1 Keep both**, **2 Replace**, or
+**3 Cancel**. Escape also cancels. Keep both picks a free name such as
+`report-copy-1.txt`. Replace requires an existing document that is closed in
+Notes. Paste writes through the native filesystem and its normal commit path.
+This version copies individual documents.
+
 ## Desktop applications
 
 Files, Notes, Calculator and Settings use a shared application registry, lifecycle callbacks,

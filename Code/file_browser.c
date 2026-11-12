@@ -18,7 +18,10 @@ static GuiRect context;
 static FileResult storage_result = FILE_UNAVAILABLE;
 static char input[FILE_PATH], status_line[160];
 static const char *message = "Double-click to open; right-click for actions";
-static unsigned previous_buttons;
+enum { PASTE_CONFLICT = 6 };
+static unsigned previous_buttons, clipboard_size, paste_target;
+static char clipboard_name[FILE_NAME];
+static uint8_t clipboard_data[FILE_BYTES];
 static const BootInfo *screen;
 static unsigned text_length(const char *s) {
     unsigned n = 0;
@@ -191,8 +194,121 @@ static void perform(void) {
     } else
         message = files_error(r);
 }
+static const FileEntry *named_entry(const char *name) {
+    for (unsigned i = 0; i < count; ++i)
+        if (equal(entries[i].name, name))
+            return &entries[i];
+    return 0;
+}
+
+static void copy_document(void) {
+    if (!selected || trash || trash_context) {
+        message = "Select a document outside Trash to copy";
+        return;
+    }
+    FileEntry entry;
+    FileResult r = fs->entry(selected, &entry);
+    if (r != FILE_OK) {
+        message = files_error(r);
+        return;
+    }
+    if (entry.flags & FILE_DIRECTORY) {
+        message = "Select a document to copy";
+        return;
+    }
+    unsigned size = sizeof(clipboard_data);
+    r = fs->read_id(entry.id, clipboard_data, &size);
+    if (r != FILE_OK) {
+        message = files_error(r);
+        return;
+    }
+    copy(clipboard_name, entry.name, sizeof(clipboard_name));
+    clipboard_size = size;
+    message = "Document copied. Open a folder and paste.";
+}
+
+static void paste_document(int choice) {
+    if (!clipboard_name[0] || trash || trash_context) {
+        message = "Copy a document and open a folder outside Trash";
+        return;
+    }
+    refresh();
+    if (storage_result != FILE_OK)
+        return;
+    const FileEntry *existing = named_entry(clipboard_name);
+    if (!choice && existing) {
+        paste_target = existing->id;
+        dialog = PASTE_CONFLICT;
+        message = "Choose how to handle the existing item";
+        return;
+    }
+    if (choice == 2) {
+        if (!existing || existing->id != paste_target) {
+            message = "The destination changed. Start the paste again.";
+            dialog = 0;
+            return;
+        }
+        if (existing->flags & FILE_DIRECTORY || file_app_in_use(existing->id)) {
+            message = "Replace requires a document that is closed in Notes";
+            return;
+        }
+    }
+
+    char name[FILE_NAME];
+    copy(name, clipboard_name, sizeof(name));
+    if (choice == 1) {
+        unsigned length = text_length(clipboard_name);
+        unsigned extension = length;
+        for (unsigned i = 1; i < length; ++i)
+            if (clipboard_name[i] == '.')
+                extension = i;
+        // Leave room for the suffix and preserve short file extensions.
+        unsigned extension_length = length - extension;
+        if (extension_length > 12) {
+            extension = length;
+            extension_length = 0;
+        }
+        unsigned stem = FILE_NAME - 1 - 8 - extension_length;
+        if (stem > extension)
+            stem = extension;
+        for (unsigned number = 1; number <= FILE_COUNT + 1; ++number) {
+            for (unsigned i = 0; i < stem; ++i)
+                name[i] = clipboard_name[i];
+            copy(name + stem, "-copy-", sizeof(name) - stem);
+            unsigned end = stem + 6;
+            if (number >= 10)
+                name[end++] = (char)('0' + number / 10);
+            name[end++] = (char)('0' + number % 10);
+            copy(name + end, clipboard_name + extension, sizeof(name) - end);
+            if (!named_entry(name))
+                break;
+        }
+    }
+    FileResult result = fs->write_at(folder, name, clipboard_data, clipboard_size);
+    if (result != FILE_OK) {
+        message = files_error(result);
+        return;
+    }
+    dialog = 0;
+    last_id = 0;
+    apps_documents_changed();
+    refresh();
+    const FileEntry *pasted = named_entry(name);
+    if (pasted)
+        selected = pasted->id;
+    message = "Document pasted";
+}
+
 static void command(char key) {
     context_open = 0;
+    if ((unsigned char)key == EDIT_COPY) {
+        copy_document();
+        return;
+    }
+    if ((unsigned char)key == EDIT_PASTE) {
+        paste_document(0);
+        return;
+    }
     if (key == 'o') {
         if (selected)
             activate(selected);
@@ -345,6 +461,9 @@ static GuiRect dialog_rect(GuiRect w) {
         width = 520;
     return (GuiRect){w.x + (w.width - width) / 2, w.y + 72, width, 222};
 }
+static GuiRect paste_button(GuiRect panel, int index) {
+    return (GuiRect){panel.x + 18 + index * 110, panel.y + 170, 100, 32};
+}
 static int row_at(GuiRect w, int x, int y) {
     if (x < w.x + 16 || x >= w.x + w.width - 16 || y < w.y + 181 || y >= w.y + 181 + (int)rows(w) * 36)
         return -1;
@@ -423,11 +542,11 @@ static void draw(const BootInfo *s, GuiRect w) {
     button((GuiRect){w.x + w.width - 96, w.y + w.height - 78, 68, 30}, "Next");
     clipped(w.x + 18, w.y + w.height - 30, w.width - 36, message);
     if (context_open) {
-        unsigned n = trash ? 2 : 6;
+        unsigned n = trash ? 2 : 8;
         gui_shadow(screen, context, 10);
         gui_round_rect(screen, context, 10, shell_palette(screen).surface, 255);
-        const char *normal[] = {"Open",          "Rename",     "Move to folder",
-                                "Move to Trash", "New folder", "New note"};
+        const char *normal[] = {"Open",       "Rename",   "Move to folder", "Move to Trash",
+                                "New folder", "New note", "Copy",           "Paste"};
         const char *deleted[] = {"Restore", "Delete permanently"};
         for (unsigned i = 0; i < n; ++i)
             text(context.x + 14, context.y + 12 + (int)i * 32, trash ? deleted[i] : normal[i]);
@@ -438,6 +557,15 @@ static void draw(const BootInfo *s, GuiRect w) {
                        180);
         gui_shadow(screen, p, 14);
         gui_round_rect(screen, p, 14, shell_palette(screen).background, 255);
+        if (dialog == PASTE_CONFLICT) {
+            text(p.x + 18, p.y + 20, "An item already has this name");
+            clipped(p.x + 18, p.y + 53, p.width - 36, clipboard_name);
+            clipped(p.x + 18, p.y + 135, p.width - 36, message);
+            button(paste_button(p, 0), "1 Keep both");
+            button(paste_button(p, 1), "2 Replace");
+            button(paste_button(p, 2), "3 Cancel");
+            return;
+        }
         const char *titles[] = {
             "", "New folder", "Rename item", "Move to folder", "Move to Trash?", "Delete permanently?"};
         text(p.x + 18, p.y + 20, titles[dialog]);
@@ -459,6 +587,15 @@ static void draw(const BootInfo *s, GuiRect w) {
 static void click(GuiRect w, int x, int y) {
     if (dialog) {
         GuiRect p = dialog_rect(w);
+        if (dialog == PASTE_CONFLICT) {
+            if (inside(paste_button(p, 0), x, y))
+                paste_document(1);
+            else if (inside(paste_button(p, 1), x, y))
+                paste_document(2);
+            else if (inside(paste_button(p, 2), x, y))
+                dialog = 0;
+            return;
+        }
         if (inside(p, x, y) && y >= p.y + 170 && y < p.y + 202) {
             if (x < p.x + 118)
                 dialog = 0;
@@ -471,8 +608,14 @@ static void click(GuiRect w, int x, int y) {
         if (inside(context, x, y)) {
             unsigned i = (unsigned)(y - context.y - 6) / 32;
             const char *keys = trash ? "rp" : "ormtnf";
-            if (y >= context.y + 6 && i < (trash ? 2u : 6u))
-                command(keys[i]);
+            if (y >= context.y + 6 && i < (trash ? 2u : 8u)) {
+                if (!trash && i == 6)
+                    command((char)EDIT_COPY);
+                else if (!trash && i == 7)
+                    command((char)EDIT_PASTE);
+                else
+                    command(keys[i]);
+            }
         }
         context_open = 0;
         return;
@@ -537,7 +680,7 @@ static void pointer(GuiRect w, int x, int y, unsigned buttons) {
         int index = row_at(w, x, y);
         selected = index >= 0 ? entries[index].id : 0;
         last_id = 0;
-        int height = trash ? 76 : 204;
+        int height = trash ? 76 : 268;
         context = (GuiRect){x, y, 206, height};
         if (context.x + 206 > w.x + w.width - 12)
             context.x = w.x + w.width - 218;
@@ -551,6 +694,15 @@ static void pointer(GuiRect w, int x, int y, unsigned buttons) {
 }
 static void key(char k) {
     unsigned command_key = (unsigned char)k;
+    if (dialog == PASTE_CONFLICT) {
+        if (k == '1')
+            paste_document(1);
+        else if (k == '2')
+            paste_document(2);
+        else if (k == '3')
+            dialog = 0;
+        return;
+    }
     if (dialog) {
         unsigned n = text_length(input);
         if (command_key == EDIT_SELECT_ALL) {

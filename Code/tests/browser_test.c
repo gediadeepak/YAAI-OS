@@ -12,6 +12,7 @@
 static uint8_t sectors[1024][512];
 static uint64_t addresses[1024];
 static unsigned used;
+static int fail_write;
 static uint32_t canvas_pixels[640 * 480 + 2];
 static int read_sector(void *c, uint64_t lba, void *p) {
     (void)c;
@@ -26,7 +27,7 @@ static int read_sector(void *c, uint64_t lba, void *p) {
 }
 static int write_sector(void *c, uint64_t lba, const void *p) {
     (void)c;
-    if (lba >= 32768)
+    if (fail_write || lba >= 32768)
         return 0;
     unsigned index = 0;
     while (index < used && addresses[index] != lba)
@@ -176,6 +177,40 @@ int browser_test(void) {
     apps_key(APP_NOTES, 7);
     apps_key(APP_NOTES, 7);
     CHECK(apps_close(APP_NOTES));
+    // Copy binary data through the context menu, then paste in another folder.
+    apps_click(APP_FILES, w, 40, 122);
+    apps_pointer(APP_FILES, w, 80, 226, 2);
+    apps_pointer(APP_FILES, w, 80, 226, 0);
+    CHECK(file_browser_selected() == bin);
+    apps_click(APP_FILES, w, 95, 434);
+    apps_click(APP_FILES, w, 80, 190);
+    apps_click(APP_FILES, w, 80, 190);
+    CHECK(file_browser_directory() == work);
+    apps_key(APP_FILES, (char)EDIT_PASTE);
+    unsigned pasted;
+    CHECK(files_resolve("/work/binary.bin", &pasted) == FILE_OK && pasted != bin);
+    apps_key(APP_FILES, (char)EDIT_COPY);
+    apps_key(APP_FILES, (char)EDIT_PASTE);
+    apps_key(APP_FILES, '3');
+    CHECK(files_resolve("/work/binary-copy-1.bin", &pasted) == FILE_NOT_FOUND);
+    apps_key(APP_FILES, (char)EDIT_PASTE);
+    apps_key(APP_FILES, '1');
+    CHECK(files_resolve("/work/binary-copy-1.bin", &pasted) == FILE_OK);
+    CHECK(files_write("/work/binary.bin", "old", 3) == FILE_OK);
+    apps_key(APP_FILES, (char)EDIT_PASTE);
+    fail_write = 1;
+    apps_key(APP_FILES, '2');
+    fail_write = 0;
+    size = sizeof(out);
+    CHECK(files_read("/work/binary.bin", out, &size) == FILE_OK && size == 3 && out[0] == 'o');
+    size = sizeof(out);
+    CHECK(files_read_id(bin, out, &size) == FILE_OK && size == 2 && out[0] == 0 && out[1] == 1);
+    apps_key(APP_FILES, '2');
+    CHECK(files_mount(&disk) == FILE_OK);
+    size = sizeof(out);
+    CHECK(files_read("/work/binary.bin", out, &size) == FILE_OK && size == 2 && out[0] == 0 && out[1] == 1);
+    size = sizeof(out);
+    CHECK(files_read("/work/binary-copy-1.bin", out, &size) == FILE_OK && size == 2 && out[0] == 0 && out[1] == 1);
     CHECK(apps_close(APP_FILES));
     files_mount(0);
     CHECK(apps_launch(APP_FILES));
