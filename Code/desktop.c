@@ -20,6 +20,7 @@
 #include "shell_ui.h"
 #include "quick_settings.h"
 #include "notifications.h"
+#include "remote_desktop.h"
 
 
 
@@ -755,6 +756,7 @@ _Noreturn void desktop_run(const BootInfo *boot)
             }
             draw_pointer();
         }
+        remote_desktop_poll(display);
         screen_wait_frame();
     }
 }

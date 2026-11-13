@@ -53,6 +53,41 @@ char platform_serial_console_read(void)
     return key;
 }
 
+enum { REMOTE_COM = 0x2f8 };
+
+int platform_remote_serial_initialize(void)
+{
+    uint8_t previous = port_read(REMOTE_COM + 7);
+    port_write(REMOTE_COM + 7, 0x5a);
+    int present = port_read(REMOTE_COM + 7) == 0x5a;
+    port_write(REMOTE_COM + 7, previous);
+    if (!present) return 0;
+    port_write(REMOTE_COM + 1, 0);
+    port_write(REMOTE_COM + 3, 0x80);
+    port_write(REMOTE_COM, 1);
+    port_write(REMOTE_COM + 1, 0);
+    port_write(REMOTE_COM + 3, 3);
+    port_write(REMOTE_COM + 2, 0xc7);
+    port_write(REMOTE_COM + 4, 0x0b);
+    return 1;
+}
+
+int platform_remote_serial_read(void)
+{
+    uint8_t status = port_read(REMOTE_COM + 5);
+    if (!(status & 1)) return -1;
+    uint8_t value = port_read(REMOTE_COM);
+    return status & 0x1e ? -1 : value;
+}
+
+unsigned platform_remote_serial_write(const uint8_t *bytes, unsigned size)
+{
+    unsigned sent = 0;
+    while (sent < size && (port_read(REMOTE_COM + 5) & 0x20))
+        port_write(REMOTE_COM, bytes[sent++]);
+    return sent;
+}
+
 void platform_wait_frame(void)
 {
     uint8_t gate = port_read(0x61);

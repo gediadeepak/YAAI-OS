@@ -1,4 +1,4 @@
-param([switch]$Installer)
+param([switch]$Installer, [switch]$RemoteDesktop)
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 & "$PSScriptRoot\build.ps1"
@@ -34,8 +34,13 @@ try {
   if ($useInstaller) {
     $installerArguments = @('-drive',"if=none,id=osdisk,format=raw,snapshot=on,file=fat:$runDirectory\esp",'-device','ide-hd,drive=osdisk,bus=ide.0,bootindex=1')
   }
+  $serialArguments = @()
+  if ($RemoteDesktop) {
+    $serialArguments = @('-serial', 'file:build/remote-desktop-serial.log', '-serial', 'tcp:127.0.0.1:17124,server=on,wait=off')
+  }
   & 'C:\Program Files\qemu\qemu-system-x86_64.exe' -machine q35 -m 512M -rtc base=utc `
     -device piix3-ide,id=storage `
+    @serialArguments `
     @documentsArguments `
     -drive "if=pflash,format=raw,readonly=on,file=$qemuShare\edk2-x86_64-code.fd" `
     -drive "if=pflash,format=raw,file=$variables" `

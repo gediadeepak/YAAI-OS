@@ -94,6 +94,9 @@ int platform_pointer_read(PlatformPointer *event) { virtio_input_poll(); return 
 int platform_audio_start(const BootInfo *boot) { (void)boot; return 0; }
 int platform_audio_available(void) { return 0; }
 void platform_audio_volume(unsigned percent) { (void)percent; }
+int platform_remote_serial_initialize(void) { return 0; }
+int platform_remote_serial_read(void) { return -1; }
+unsigned platform_remote_serial_write(const uint8_t *bytes, unsigned size) { (void)bytes; (void)size; return 0; }
 void platform_network_initialize(void) {}
 void platform_network_poll(void) {}
 const char *platform_network_status(void) { return "Network: ARM64 driver not implemented"; }

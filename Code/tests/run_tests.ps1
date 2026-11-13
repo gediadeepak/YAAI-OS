@@ -14,7 +14,7 @@ foreach ($source in @('memory_test', 'clock_test', 'mouse_test', 'gui_test', 'ne
   if ($LASTEXITCODE -ne 0) { throw "$source compilation failed." }
   $testObjects += "$testDirectory\$source.obj"
 }
-$objects = @('kernel', 'audio', 'chime', 'exception_stubs', 'console', 'exceptions', 'keyboard', 'shell', 'memory', 'runtime', 'setup', 'installer', 'install_disk', 'clock', 'ps2', 'mouse', 'desktop','shell_ui','quick_settings','notifications', 'gui', 'gui_assets', 'devices', 'network', 'platform_compat', 'platform_hal', 'platform_clock', 'input_events', 'storage', 'settings', 'platform_store', 'display_mode', 'files', 'platform_disk', 'file_app','file_browser', 'volumes', 'power', 'editor', 'window_manager', 'apps', 'notes_app', 'calculator', 'calculator_app','settings_app','boot_update', 'vbox_pointer','boot_efi') |
+$objects = @('kernel', 'audio', 'chime', 'exception_stubs', 'console', 'exceptions', 'keyboard', 'shell', 'memory', 'runtime', 'setup', 'installer', 'install_disk', 'clock', 'ps2', 'mouse', 'desktop','shell_ui','quick_settings','notifications', 'gui', 'gui_assets', 'devices', 'network', 'platform_compat', 'platform_hal', 'platform_clock', 'input_events', 'storage', 'settings', 'platform_store', 'display_mode', 'files', 'platform_disk', 'file_app','file_browser', 'volumes', 'power', 'editor', 'window_manager', 'apps', 'notes_app', 'calculator', 'calculator_app','settings_app','boot_update','remote_desktop', 'vbox_pointer','boot_efi') |
   ForEach-Object { "build\$_.obj" }
 & "$llvmBin\lld-link.exe" /subsystem:efi_application /entry:efi_main /nodefaultlib "/out:$testDirectory\esp\EFI\BOOT\BOOTX64.EFI" @testObjects @objects
 if ($LASTEXITCODE -ne 0) { throw 'Test linking failed.' }

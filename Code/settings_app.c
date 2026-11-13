@@ -6,8 +6,9 @@
 #include "platform/platform.h"
 #include "screen.h"
 #include "settings.h"
+#include "remote_desktop.h"
 
-enum { HOME = 6, SEARCH_LIMIT = 48, HIT_LIMIT = 48 };
+enum { HOME = 6, REMOTE = 7, SEARCH_LIMIT = 48, HIT_LIMIT = 48 };
 static unsigned page = HOME;
 static int scroll, offset, content_height, searching, drag_scroll, query_selected;
 static char query[SEARCH_LIMIT];
@@ -21,22 +22,23 @@ typedef struct {
 static Hit hits[HIT_LIMIT];
 static unsigned hit_count;
 static const char *names[] = {"Display", "Personalization", "Sound", "Time & language",
-                              "About",   "Devices",         "Home"};
+                              "About",   "Devices",         "Home", "Remote Desktop"};
 static const char *descriptions[] = {
     "Resolution, display size and scaling", "Wallpaper, colors and accent themes",
     "Volume, mute and test sound",          "Country, time zone and local time",
-    "OS version, memory and storage",       "Network, wireless and power status"};
+    "OS version, memory and storage",       "Network, wireless and power status", "", "Share your screen with a paired browser"};
 static const char *keywords[] = {
     "display screen resolution scaling size monitor",
     "personalization appearance wallpaper background theme color colour accent light dark system mode",
     "sound audio speaker volume mute",
     "time language country zone date clock",
     "about system version memory ram storage information",
-    "devices network ethernet wifi wireless battery power sim bluetooth"};
+    "devices network ethernet wifi wireless battery power sim bluetooth", "",
+    "remote desktop share sharing screen browser pair"};
 unsigned settings_app_page(void) { return page; }
 int settings_app_scroll(void) { return scroll; }
 void settings_app_select(unsigned p) {
-    if (p <= HOME) {
+    if (p <= REMOTE) {
         page = p;
         scroll = 0;
         query[0] = 0;
@@ -186,7 +188,7 @@ static void hit(GuiRect r, int action) {
         hits[hit_count++] = (Hit){r, action};
 }
 static void icon(int kind, int x, int y, uint32_t c) {
-    if (kind == 0) {
+    if (kind == 0 || kind == REMOTE) {
         fill((GuiRect){x, y + 2, 21, 14}, 3, c);
         fill((GuiRect){x + 2, y + 4, 17, 10}, 1, rgb(244, 248, 251));
         line(x + 10, y + 16, x + 10, y + 21, 2, c);
@@ -482,6 +484,19 @@ static void details(void) {
         else
             text(18, y + 48, "No documents volume mounted", GUI_SMALL, muted());
         y += 106;
+    } else if (page == REMOTE) {
+        int available = remote_desktop_available();
+        int active = remote_desktop_enabled();
+        if (available) {
+            choice((GuiRect){0, y, width, 65}, active ? "Stop sharing" : "Start sharing",
+                   active ? "View-only screen sharing is on" : "View-only screen sharing is off", active, 200);
+            y += 80;
+            clipped(0, y, width, "Open the Windows bridge to get the viewer address and pairing code.",
+                    GUI_SMALL, muted());
+        } else {
+            clipped(0, y, width, "Connect the virtual COM2 port to use screen sharing.", GUI_SMALL, muted());
+        }
+        y += 32;
     } else {
         card((GuiRect){0, y, width, 168});
         text(18, y + 18, "Network & internet", GUI_BODY, ink());
@@ -513,8 +528,8 @@ static void results(void) {
     int width = (int)screen->width, y = 62;
     unsigned count = 0;
     text(0, 0, "Search results", GUI_HEADING, ink());
-    for (unsigned i = 0; i < 6; ++i)
-        if (contains(keywords[i], query) || contains(names[i], query)) {
+    for (unsigned i = 0; i <= REMOTE; ++i)
+        if (i != HOME && (contains(keywords[i], query) || contains(names[i], query))) {
             card((GuiRect){0, y, width, 72});
             row((GuiRect){0, y, width, 72}, (int)i, names[i], descriptions[i], (int)i);
             y += 84;
@@ -541,8 +556,8 @@ static void draw(const BootInfo *boot, GuiRect w) {
     text(w.x + 33, w.y + 81, "Y", GUI_BODY, rgb(255, 255, 255));
     text(w.x + 76, w.y + 76, "YAAI OS", GUI_BODY, ink());
     text(w.x + 76, w.y + 101, "Local device", GUI_SMALL, muted());
-    unsigned order[7] = {HOME, 0, 1, 2, 3, 5, 4};
-    for (unsigned i = 0; i < 7; ++i) {
+    static const unsigned order[] = {HOME, 0, 1, 2, 3, 5, REMOTE, 4};
+    for (unsigned i = 0; i < sizeof(order) / sizeof(order[0]); ++i) {
         unsigned p = order[i];
         GuiRect r = {w.x + 12, w.y + 146 + (int)i * 38, view.x - w.x - 36, 34};
         if (p == page) {
@@ -629,6 +644,8 @@ static void option(unsigned i) {
         platform_audio_volume(settings_current()->volume);
     } else if (page == 3 && i < 7)
         settings_zone(i);
+    else if (page == REMOTE && i == 0)
+        remote_desktop_toggle();
 }
 static void scroll_to(int y) {
     int max = maximum_scroll();
@@ -647,8 +664,8 @@ static void click(GuiRect w, int x, int y) {
         return;
     }
     searching = 0;
-    unsigned order[7] = {HOME, 0, 1, 2, 3, 5, 4};
-    for (unsigned i = 0; i < 7; ++i)
+    static const unsigned order[] = {HOME, 0, 1, 2, 3, 5, REMOTE, 4};
+    for (unsigned i = 0; i < sizeof(order) / sizeof(order[0]); ++i)
         if (inside((GuiRect){w.x + 12, w.y + 146 + (int)i * 38, view.x - w.x - 36, 34}, x, y)) {
             settings_app_select(order[i]);
             return;
@@ -703,8 +720,8 @@ static void key(char k) {
             return;
         }
         if (k == '\n' && query[0]) {
-            for (unsigned i = 0; i < 6; ++i)
-                if (contains(keywords[i], query) || contains(names[i], query)) {
+            for (unsigned i = 0; i <= REMOTE; ++i)
+                if (i != HOME && (contains(keywords[i], query) || contains(names[i], query))) {
                     settings_app_select(i);
                     return;
                 }
@@ -742,15 +759,15 @@ static void key(char k) {
         return;
     }
     if (k == '\t') {
-        settings_app_select(page == HOME ? 0 : page == 5 ? HOME : page + 1);
+        settings_app_select(page == REMOTE ? 0 : page == 5 ? HOME : page + 1);
         return;
     }
     if (k >= '1' && k <= '6') {
         settings_app_select((unsigned)(k - '1'));
         return;
     }
-    if (k == '7') {
-        settings_app_select(HOME);
+    if (k == '7' || k == '8') {
+        settings_app_select(k == '7' ? HOME : REMOTE);
         return;
     }
     if (page == 1 && k >= 'h' && k <= 'j') {

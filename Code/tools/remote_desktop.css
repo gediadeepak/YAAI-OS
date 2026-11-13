@@ -1,0 +1,12 @@
+:root { color-scheme: dark; font: 16px system-ui, sans-serif; background: #0c121d; color: #e9f1fc; }
+body { margin: 0; }
+main { max-width: 920px; margin: auto; padding: 24px 16px; }
+h1 { margin: 0; font-size: 1.6rem; }
+p { color: #b0c4db; }
+form { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+input, button { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid #536681; }
+input { background: #182436; color: inherit; max-width: 100%; }
+button { background: #a5e2e8; color: #101c28; cursor: pointer; }
+canvas { width: 100%; height: auto; border: 1px solid #405270; border-radius: 8px; }
+#disconnect { margin-top: 12px; }
+[hidden] { display: none; }

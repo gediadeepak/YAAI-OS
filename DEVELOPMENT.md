@@ -124,3 +124,36 @@ try {
 ```
 
 QEMU verification used the PC machine with `i8042=off`, then sent `help` through COM1 after boot. On Hyper-V, use the named-pipe result to confirm the serial path on the actual host. VMConnect keyboard and mouse input and VHDX storage still require their own guest drivers. [Microsoft's COM port setup instructions](https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/plan/should-i-create-a-generation-1-or-2-virtual-machine-in-hyper-v#add-a-com-port-for-kernel-debugging)
+
+## Remote Desktop preview
+
+YAAI captures its desktop on demand and sends 320-pixel-wide RGB565 snapshots
+over the x86-64 VM's second serial port. A Windows bridge serves the browser
+viewer over HTTPS. Sharing starts off on every boot. The viewer is view-only.
+
+1. From the repository root, run `& .\Code\launch_qemu.ps1 -RemoteDesktop`.
+   This attaches the second serial port to a loopback socket. QEMU is the
+   verified transport. VirtualBox opens the Settings page but timed out
+   during frame transfer over its host pipe in testing.
+2. Run the bridge on Windows with Node.js and a PKCS#12 certificate trusted
+   by the viewing device. The certificate must cover the IP address you use
+   to connect. Use this command for a PC-only preview:
+
+   ```powershell
+   node .\Code\tools\remote_desktop_bridge.js C:\path\to\viewer.pfx 127.0.0.1 127.0.0.1:17124
+   ```
+
+   For a phone on your Wi-Fi, replace the first IP argument with the PC's
+   Wi-Fi IPv4 address. Keep the COM2 socket on loopback. If Windows Firewall
+   blocks the viewer, allow TCP 8443 for the bridge on your private network
+   and restrict the rule to the local subnet. Use a certificate the phone
+   can validate before entering the pairing code. For password-protected
+   certificates, pass the password in the bridge process's
+   `YAAI_TLS_PASSWORD` environment variable.
+3. In YAAI, open **Settings → Remote Desktop → Start sharing**. From
+   Settings you can also press **8**, then **A**. Open the HTTPS address
+   printed by the bridge and enter its one-time pairing code. The code
+   expires after ten minutes and the paired session after thirty minutes.
+4. Select **Stop sharing** in YAAI to stop sending frames. Select
+   **Disconnect** in the browser to revoke its session, or stop the bridge
+   with **Ctrl+C**. Restart the bridge to generate a new pairing code.

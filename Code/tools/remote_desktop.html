@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YAAI OS Remote Desktop</title>
+<link rel="stylesheet" href="/viewer.css">
+<main>
+  <header><h1>YAAI OS</h1><p>Remote Desktop · View only</p></header>
+  <form id="pair">
+    <label for="code">Pairing code</label>
+    <input id="code" required maxlength="24" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button>Connect</button>
+  </form>
+  <p id="status" role="status"></p>
+  <canvas id="screen" aria-label="Live YAAI desktop" hidden></canvas>
+  <button id="disconnect" hidden>Disconnect</button>
+</main>
+<script src="/viewer.js" defer></script>
