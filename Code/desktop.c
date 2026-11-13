@@ -629,6 +629,7 @@ _Noreturn void desktop_run(const BootInfo *boot)
         if(last_zone!=settings_current()->zone){last_zone=settings_current()->zone;refresh_clock();scene_dirty=1;}
         if(last_color!=settings_current()->color_mode){last_color=settings_current()->color_mode;scene_dirty=1;}
         apps_tick();
+        if (file_app_tick()) scene_dirty = 1;
         if (notification_tick()) {
             if (notifications_open) notification_mark_read();
             scene_dirty = 1;

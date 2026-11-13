@@ -1,8 +1,8 @@
 #include "../apps.h"
-#include "../platform/platform.h"
 #include "../edit_keys.h"
 #include "../file_app.h"
 #include "../file_browser.h"
+#include "../platform/platform.h"
 #include "../settings.h"
 #include "../volumes.h"
 #define CHECK(x)                                                                                           \
@@ -211,7 +211,8 @@ int browser_test(void) {
     size = sizeof(out);
     CHECK(files_read("/work/binary.bin", out, &size) == FILE_OK && size == 2 && out[0] == 0 && out[1] == 1);
     size = sizeof(out);
-    CHECK(files_read("/work/binary-copy-1.bin", out, &size) == FILE_OK && size == 2 && out[0] == 0 && out[1] == 1);
+    CHECK(files_read("/work/binary-copy-1.bin", out, &size) == FILE_OK && size == 2 && out[0] == 0 &&
+          out[1] == 1);
     CHECK(files_write("/work/drafts/nested.txt", "nested", 6) == FILE_OK);
     apps_click(APP_FILES, w, 40, 122);
     apps_click(APP_FILES, w, 80, 190);
@@ -266,6 +267,55 @@ int browser_test(void) {
     CHECK(equal(file_browser_status(), "2 completed, 0 need attention"));
     CHECK(files_resolve("/work/batch/binary.bin", &pasted) == FILE_NOT_FOUND);
     CHECK(files_resolve("/work/batch/binary-copy-1.bin", &pasted) == FILE_NOT_FOUND);
+    apps_key(APP_FILES, '\n');
+    apps_key(APP_FILES, (char)EDIT_FIND);
+    keys(APP_FILES, "NESTED");
+    apps_key(APP_FILES, '\t');
+    CHECK(file_browser_directory() != 0);
+    CHECK(file_browser_selected() != 0);
+    CHECK(files_entry(file_browser_selected(), &e) == FILE_OK && equal(e.name, "nested.txt"));
+
+    CHECK(files_write("/find-test.txt", "one One two", 11) == FILE_OK);
+    CHECK(files_resolve("/find-test.txt", &pasted) == FILE_OK);
+    CHECK(apps_open_document(pasted));
+    apps_key(APP_NOTES, (char)EDIT_REPLACE);
+    keys(APP_NOTES, "ONE\tz");
+    apps_key(APP_NOTES, (char)EDIT_REPLACE_ALL);
+    CHECK(file_app_has_changes());
+    CHECK(apps_escape(APP_NOTES));
+    apps_key(APP_NOTES, (char)EDIT_UNDO);
+    CHECK(!file_app_has_changes());
+    apps_key(APP_NOTES, (char)EDIT_REDO);
+    for (unsigned frame = 0; frame < 81; ++frame)
+        apps_tick();
+    file_app_tick();
+    CHECK(files_mount(&disk) == FILE_OK);
+    unsigned draft_size = sizeof(out);
+    CHECK(files_draft_read(out, &draft_size) == FILE_TOO_LARGE && draft_size == 43);
+    size = sizeof(out);
+    CHECK(files_read("/find-test.txt", out, &size) == FILE_OK && size == 11 && out[0] == 'o');
+    apps_key(APP_NOTES, 6);
+    size = sizeof(out);
+    CHECK(files_read("/find-test.txt", out, &size) == FILE_OK && size == 7 && out[0] == 'z' &&
+          out[2] == 'z');
+    size = sizeof(out);
+    CHECK(files_draft_read(out, &size) == FILE_NOT_FOUND);
+    CHECK(apps_close(APP_NOTES));
+    // Seed a saved draft, then open Notes as it would after a fresh boot.
+    char recovery[39] = "YDR";
+    for (unsigned i = 0; i < 12; ++i)
+        recovery[4 + i] = "recover.txt"[i];
+    recovery[36] = 'a';
+    recovery[37] = 'b';
+    recovery[38] = 'c';
+    CHECK(files_draft_write(recovery, sizeof(recovery)) == FILE_OK);
+    CHECK(apps_launch(APP_NOTES) && file_app_recovery_pending());
+    apps_key(APP_NOTES, 'r');
+    CHECK(file_app_has_changes() && !file_app_recovery_pending());
+    apps_key(APP_NOTES, 6);
+    size = sizeof(out);
+    CHECK(files_read("/recover.txt", out, &size) == FILE_OK && size == 3 && out[2] == 'c');
+    CHECK(apps_close(APP_NOTES));
     CHECK(apps_close(APP_FILES));
     files_mount(0);
     CHECK(apps_launch(APP_FILES));

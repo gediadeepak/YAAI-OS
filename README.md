@@ -134,6 +134,25 @@ Copy, Cut, Paste and Move to Trash actions for a selection. Batch paste skips
 destination name conflicts. The results dialog lists the outcome for each item.
 Use Prev and Next to page through the results, or use the arrow keys.
 
+## Search and recovery
+
+In Files, press **Ctrl+F** and type part of a filename to search across folders.
+Results show the containing folder. Use the arrow keys to select a result,
+**Enter** to open it in Notes, or **Tab** to go to its folder.
+
+In Notes, **Ctrl+F** highlights matching text. **Enter** and **Shift+Enter**
+move between matches. **Ctrl+H** opens Find and Replace. Type the search text,
+press **Tab** to enter replacement text, then use **Ctrl+R** to replace the
+selected match or **Ctrl+Enter** to replace all matches. Press **Esc** to close
+search before using **Ctrl+Z** to undo. Both searches ignore ASCII letter case.
+
+Notes checkpoints unsaved edits to one private record on a writable v2 documents
+volume, beginning about two seconds after an edit. The record needs one free
+file slot and can hold up to 65,500 text bytes. A successful save or explicit
+discard clears it. After an abrupt reset, open Notes and press **R** to recover
+the last saved draft as a new note, or **D** to discard it. Choose a free name
+before saving a recovered draft if its original name already exists.
+
 ## Desktop applications
 
 Files, Notes, Calculator and Settings use a shared application registry, lifecycle callbacks,

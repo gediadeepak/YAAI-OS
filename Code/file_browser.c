@@ -737,6 +737,67 @@ static GuiRect dialog_rect(GuiRect w) {
 static GuiRect paste_button(GuiRect panel, int index) {
     return (GuiRect){panel.x + 18 + index * 110, panel.y + 170, 100, 32};
 }
+enum { SEARCH_DIALOG = 9, SEARCH_ROWS = 5 };
+static char search_query[FILE_NAME];
+static FileEntry search_results[FILE_COUNT];
+static unsigned search_count, search_index;
+
+static char lower_ascii(char c) { return c >= 'A' && c <= 'Z' ? (char)(c + 'a' - 'A') : c; }
+
+static int name_contains(const char *name, const char *query) {
+    for (; *name; ++name) {
+        unsigned n = 0;
+        while (query[n] && name[n] && lower_ascii(query[n]) == lower_ascii(name[n]))
+            ++n;
+        if (!query[n])
+            return 1;
+    }
+    return 0;
+}
+
+static void search_files(void) {
+    search_count = search_index = 0;
+    if (!search_query[0])
+        return;
+    for (unsigned id = 1; id <= FILE_COUNT; ++id) {
+        FileEntry item;
+        FileResult r = fs->entry(id, &item);
+        if (r == FILE_IO_ERROR || r == FILE_UNAVAILABLE) {
+            search_count = 0;
+            message = files_error(r);
+            return;
+        }
+        if (r != FILE_OK || item.flags & (FILE_DIRECTORY | FILE_TRASHED) ||
+            !name_contains(item.name, search_query))
+            continue;
+        unsigned parent = item.parent;
+        for (unsigned depth = 0; parent && depth < FILE_COUNT; ++depth) {
+            FileEntry ancestor;
+            if (fs->entry(parent, &ancestor) != FILE_OK || ancestor.flags & FILE_TRASHED)
+                break;
+            parent = ancestor.parent;
+        }
+        if (!parent)
+            search_results[search_count++] = item;
+    }
+    message = search_count ? "Enter opens the file. Tab opens its folder." : "No matching files";
+}
+
+static void search_activate(int open_file) {
+    if (!search_count)
+        return;
+    FileEntry item = search_results[search_index];
+    if (open_file) {
+        if (apps_open_document(item.id))
+            dialog = 0;
+        else
+            message = "Could not open file in Notes";
+    } else {
+        navigate(item.parent, 0, 0);
+        selected = selection_anchor = item.id;
+    }
+}
+
 static int row_at(GuiRect w, int x, int y) {
     if (x < w.x + 16 || x >= w.x + w.width - 16 || y < w.y + 181 || y >= w.y + 181 + (int)rows(w) * 36)
         return -1;
@@ -846,6 +907,27 @@ static void draw(const BootInfo *s, GuiRect w) {
             button(paste_button(p, 2), "3 Cancel");
             return;
         }
+        if (dialog == SEARCH_DIALOG) {
+            clipped(p.x + 18, p.y + 12, p.width - 36, "Find by filename");
+            button((GuiRect){p.x + 18, p.y + 32, p.width - 36, 27},
+                   search_query[0] ? search_query : "Type part of a filename");
+            unsigned start = search_index / SEARCH_ROWS * SEARCH_ROWS;
+            for (unsigned row = 0; row < SEARCH_ROWS && start + row < search_count; ++row) {
+                FileEntry *item = &search_results[start + row];
+                GuiRect line = {p.x + 18, p.y + 64 + (int)row * 20, p.width - 36, 19};
+                if (start + row == search_index)
+                    gui_round_rect(screen, line, 4, accent(), 255);
+                clipped(line.x + 4, line.y + 2, line.width / 2 - 8, item->name);
+                char path[FILE_PATH];
+                if (fs->path(item->parent, path, sizeof(path)) == FILE_OK)
+                    clipped(line.x + line.width / 2, line.y + 2, line.width / 2 - 4, path);
+            }
+            button(paste_button(p, 0), "Open");
+            button(paste_button(p, 1), "Go to folder");
+            button(paste_button(p, 2), "Close");
+            clipped(p.x + 18, p.y + 205, p.width - 36, message);
+            return;
+        }
         if (dialog == BATCH_REPORT) {
             clipped(p.x + 18, p.y + 15, p.width - 36, batch_message);
             for (unsigned row = 0; row < REPORT_ROWS && report_page + row < report_count; ++row) {
@@ -898,6 +980,21 @@ void file_browser_click_modified(GuiRect w, int x, int y, unsigned modifiers) {
                 paste_document(2);
             else if (inside(paste_button(p, 2), x, y))
                 dialog = 0;
+            return;
+        }
+        if (dialog == SEARCH_DIALOG) {
+            if (inside(paste_button(p, 0), x, y))
+                search_activate(1);
+            else if (inside(paste_button(p, 1), x, y))
+                search_activate(0);
+            else if (inside(paste_button(p, 2), x, y))
+                dialog = 0;
+            else if (x >= p.x + 18 && x < p.x + p.width - 18 && y >= p.y + 64 &&
+                     y < p.y + 64 + SEARCH_ROWS * 20) {
+                unsigned i = search_index / SEARCH_ROWS * SEARCH_ROWS + (unsigned)(y - p.y - 64) / 20;
+                if (i < search_count)
+                    search_index = i;
+            }
             return;
         }
         if (dialog == BATCH_REPORT) {
@@ -1052,6 +1149,37 @@ static void pointer(GuiRect w, int x, int y, unsigned buttons) {
 }
 static void key(char k) {
     unsigned command_key = (unsigned char)k;
+    if (command_key == EDIT_FIND && (!dialog || dialog == SEARCH_DIALOG)) {
+        context_open = 0;
+        dialog = SEARCH_DIALOG;
+        search_query[0] = 0;
+        search_files();
+        message = "Searches filenames across all folders";
+        return;
+    }
+    if (dialog == SEARCH_DIALOG) {
+        unsigned n = text_length(search_query);
+        if (k == '\n')
+            search_activate(1);
+        else if (k == '\t')
+            search_activate(0);
+        else if (command_key == EDIT_UP && search_index)
+            --search_index;
+        else if (command_key == EDIT_DOWN && search_index + 1 < search_count)
+            ++search_index;
+        else if (k == '\b' && n) {
+            search_query[n - 1] = 0;
+            search_files();
+        } else if (command_key == EDIT_SELECT_ALL) {
+            search_query[0] = 0;
+            search_files();
+        } else if (command_key >= 32 && command_key <= 126 && n + 1 < sizeof(search_query)) {
+            search_query[n] = k;
+            search_query[n + 1] = 0;
+            search_files();
+        }
+        return;
+    }
     if (dialog == BATCH_REPORT) {
         if (command_key == EDIT_LEFT && report_page)
             report_page -= REPORT_ROWS;

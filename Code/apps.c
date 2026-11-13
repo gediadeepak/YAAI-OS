@@ -70,6 +70,7 @@ int apps_open_document(unsigned id) {
         return 0;
     file_app_bind(&services);
     file_app_open();
+    if (file_app_recovery_pending()) return apps_launch(APP_NOTES);
     if (file_app_document_id() == id && id)
         return apps_launch(APP_NOTES);
     if (!file_app_load(id))
@@ -81,6 +82,7 @@ int apps_new_document(unsigned parent) {
         return 0;
     file_app_bind(&services);
     file_app_open();
+    if (file_app_recovery_pending()) return apps_launch(APP_NOTES);
     if (!file_app_new(parent))
         return 0;
     return apps_launch(APP_NOTES);

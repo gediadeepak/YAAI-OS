@@ -35,6 +35,9 @@ typedef struct {
 } FileUsage;
 void files_initialize(void);
 FileResult files_sync(void);
+FileResult files_draft_read(void *data, unsigned *size);
+FileResult files_draft_write(const void *data, unsigned size);
+FileResult files_draft_clear(void);
 FileResult files_mount(const BlockDevice *device);
 FileResult files_list(FileEntry *entries, unsigned capacity, unsigned *count);
 FileResult files_read(const char *name, void *data, unsigned *size);

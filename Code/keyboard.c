@@ -75,6 +75,8 @@ char keyboard_read(void)
     if (code == 0x57) return 20; // F11 launches Calculator.
     if (code >= sizeof(normal)) return 0;
     char character = normal[code];
+    if (character == '\n' && controls) return (char)EDIT_REPLACE_ALL;
+    if (character == '\n' && shifts) return (char)EDIT_PREVIOUS_MATCH;
     if(controls)return (char)edit_shortcut(character);
     if (character >= 'a' && character <= 'z') {
         return (!!shifts ^ caps_lock) ? (char)(character - 'a' + 'A') : character;

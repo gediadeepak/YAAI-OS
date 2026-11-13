@@ -12,6 +12,7 @@ static const BlockDevice *disk;
 static Bank banks[2];
 static VolumeSlice slices[4];
 static BlockDevice partitions[4];
+enum { FILE_DRAFT = 8 };
 static unsigned version, limit, max_bytes, bank_sectors;
 static uint64_t base, owned_sectors;
 static int upgrade_blocked;
@@ -176,7 +177,7 @@ static FileResult load(unsigned slot, unsigned index) {
     if (!equal(b->header, version == 1 ? "YFILE001" : "YFILE002", 8) || !b->generation ||
         b->size > max_bytes || b->header[51] || !normalize((const char *)b->header + 20, name) ||
         !equal(name, b->header + 20, FILE_NAME) || get32(b->header + 56) != header_crc(b->header, 56) ||
-        b->parent > limit || b->parent == slot + 1 || (b->flags & ~7u) ||
+        b->parent > limit || b->parent == slot + 1 || (b->flags & ~15u) || ((b->flags & FILE_DRAFT) && (b->flags != FILE_DRAFT || b->parent)) ||
         ((b->flags & (FILE_DIRECTORY | FILE_DELETED)) && b->size))
         return FILE_CORRUPT;
     unsigned sectors = version == 1 ? 8 : (b->size + 511) / 512;
@@ -217,7 +218,7 @@ FileResult files_entry(unsigned id, FileEntry *entry) {
     FileResult r = select_bank(id - 1, &selected);
     if (r != FILE_OK)
         return r;
-    if (banks[selected].flags & FILE_DELETED)
+    if (banks[selected].flags & (FILE_DELETED | FILE_DRAFT))
         return FILE_NOT_FOUND;
     entry_from(id - 1, selected, entry);
     return FILE_OK;
@@ -243,7 +244,7 @@ static FileResult find(unsigned parent, const char *name, unsigned *slot, int *s
         FileResult r = select_bank(*slot, selected);
         if (r == FILE_IO_ERROR)
             return r;
-        if (r == FILE_OK && !(banks[*selected].flags & (FILE_DELETED | FILE_TRASHED)) &&
+        if (r == FILE_OK && !(banks[*selected].flags & (FILE_DELETED | FILE_TRASHED | FILE_DRAFT)) &&
             banks[*selected].parent == parent && equal(name, banks[*selected].header + 20, FILE_NAME))
             return FILE_OK;
     }
@@ -264,7 +265,7 @@ FileResult files_list_directory(unsigned parent, int trash, FileEntry *entries, 
         r = select_bank(slot, &selected);
         if (r == FILE_IO_ERROR)
             return r;
-        if (r != FILE_OK || banks[selected].flags & FILE_DELETED)
+        if (r != FILE_OK || banks[selected].flags & (FILE_DELETED | FILE_DRAFT))
             continue;
         Bank *b = &banks[selected];
         if (trash ? !(b->flags & FILE_TRASHED) : (b->parent != parent || (b->flags & FILE_TRASHED)))
@@ -288,7 +289,7 @@ FileResult files_read_id(unsigned id, void *data, unsigned *size) {
     if (r != FILE_OK)
         return r;
     Bank *b = &banks[selected];
-    if (b->flags & FILE_DELETED)
+    if (b->flags & (FILE_DELETED | FILE_DRAFT))
         return FILE_NOT_FOUND;
     if (b->flags & FILE_DIRECTORY)
         return FILE_NOT_DIRECTORY;
@@ -501,6 +502,73 @@ static FileResult create_at(unsigned parent, const char *name, const void *data,
     }
     return r;
 }
+static FileResult draft_slot(unsigned *slot, int *selected, int create) {
+    if (!disk)
+        return FILE_UNAVAILABLE;
+    unsigned available = limit;
+    int previous = -1;
+    for (unsigned i = 0; i < limit; ++i) {
+        int bank;
+        FileResult result = select_bank(i, &bank);
+        if (result == FILE_IO_ERROR)
+            return result;
+        if (result == FILE_OK && banks[bank].flags == FILE_DRAFT) {
+            *slot = i;
+            *selected = bank;
+            return FILE_OK;
+        }
+        if (available == limit && (result == FILE_NOT_FOUND ||
+            (result == FILE_OK && (banks[bank].flags & FILE_DELETED)))) {
+            available = i;
+            previous = result == FILE_OK ? bank : -1;
+        }
+    }
+    if (!create)
+        return FILE_NOT_FOUND;
+    if (available == limit)
+        return FILE_FULL;
+    *slot = available;
+    *selected = previous;
+    return FILE_OK;
+}
+
+FileResult files_draft_read(void *data, unsigned *size) {
+    unsigned slot;
+    int bank;
+    FileResult result = draft_slot(&slot, &bank, 0);
+    if (result != FILE_OK)
+        return result;
+    unsigned capacity = *size;
+    *size = banks[bank].size;
+    if (*size > capacity)
+        return FILE_TOO_LARGE;
+    for (unsigned i = 0; i < *size; ++i)
+        ((uint8_t *)data)[i] = banks[bank].data[i];
+    return FILE_OK;
+}
+
+FileResult files_draft_write(const void *data, unsigned size) {
+    if (!disk)
+        return FILE_UNAVAILABLE;
+    if (version == 1 || upgrade_blocked)
+        return FILE_READ_ONLY;
+    if (size > max_bytes)
+        return FILE_TOO_LARGE;
+    unsigned slot;
+    int bank;
+    FileResult result = draft_slot(&slot, &bank, 1);
+    static const char name[FILE_NAME] = "notes-draft";
+    return result == FILE_OK ? commit(slot, bank, name, 0, FILE_DRAFT, data, size) : result;
+}
+
+FileResult files_draft_clear(void) {
+    unsigned slot;
+    int bank;
+    FileResult result = draft_slot(&slot, &bank, 0);
+    static const char name[FILE_NAME] = "notes-draft";
+    return result == FILE_OK ? commit(slot, bank, name, 0, FILE_DELETED, 0, 0) : result;
+}
+
 FileResult files_write_at(unsigned parent, const char *name, const void *data, unsigned size) {
     return create_at(parent, name, data, size, 0);
 }
@@ -544,7 +612,7 @@ static FileResult change(unsigned id, const char *new_name, unsigned parent, uns
     FileResult r = select_bank(id - 1, &selected);
     if (r != FILE_OK)
         return r;
-    if (banks[selected].flags & FILE_DELETED)
+    if (banks[selected].flags & (FILE_DELETED | FILE_DRAFT))
         return FILE_NOT_FOUND;
     char name[FILE_NAME] = {0};
     if (!normalize(new_name, name))
@@ -678,7 +746,12 @@ FileResult files_usage(FileUsage *usage) {
     *usage = (FileUsage){version, 0, 0, 0, 0, max_bytes, owned_sectors};
     for (unsigned i = 1; i <= limit; ++i) {
         FileEntry e;
-        FileResult r = files_entry(i, &e);
+        int bank;
+        FileResult r = select_bank(i - 1, &bank);
+        if (r == FILE_OK && (banks[bank].flags & FILE_DELETED))
+            continue;
+        if (r == FILE_OK)
+            entry_from(i - 1, bank, &e);
         if (r == FILE_IO_ERROR)
             return r;
         if (r != FILE_OK)

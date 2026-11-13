@@ -102,7 +102,12 @@ void editor_point(Editor *e, unsigned row, unsigned column, int extend) {
     if (!extend)
         e->anchor = e->cursor;
 }
-static int replace(Editor *e, const char *bytes, unsigned size) {
+void editor_select(Editor *e, unsigned first, unsigned end) {
+    e->anchor = minimum(first, e->length);
+    e->cursor = minimum(end, e->length);
+    reveal(e);
+}
+int editor_replace_selection(Editor *e, const char *bytes, unsigned size) {
     unsigned first = minimum(e->cursor, e->anchor), last = e->cursor > e->anchor ? e->cursor : e->anchor;
     if (e->length - (last - first) + size > FILE_BYTES)
         return -1;
@@ -152,10 +157,10 @@ int editor_key(Editor *e, unsigned key) {
         clipboard_size = last - first;
         for (unsigned i = 0; i < clipboard_size; ++i)
             clipboard[i] = e->text[first + i];
-        return key == EDIT_CUT ? replace(e, 0, 0) : 0;
+        return key == EDIT_CUT ? editor_replace_selection(e, 0, 0) : 0;
     }
     if (key == EDIT_PASTE)
-        return clipboard_size ? replace(e, clipboard, clipboard_size) : 0;
+        return clipboard_size ? editor_replace_selection(e, clipboard, clipboard_size) : 0;
     int extend = key >= EDIT_LEFT + EDIT_SHIFT && key <= EDIT_DELETE + EDIT_SHIFT;
     unsigned command = extend ? key - EDIT_SHIFT : key;
     if (command >= EDIT_LEFT && command <= EDIT_PAGE_DOWN) {
@@ -203,7 +208,7 @@ int editor_key(Editor *e, unsigned key) {
                 ++e->anchor;
             }
         }
-        int result = replace(e, 0, 0);
+        int result = editor_replace_selection(e, 0, 0);
         if (result > 0) {
             e->history[e->current - 1].cursor = old_cursor;
             e->history[e->current - 1].anchor = old_anchor;
@@ -212,7 +217,7 @@ int editor_key(Editor *e, unsigned key) {
     }
     if (key == '\n' || (key >= 32 && key <= 126)) {
         char c = (char)key;
-        return replace(e, &c, 1);
+        return editor_replace_selection(e, &c, 1);
     }
     return 0;
 }

@@ -17,7 +17,12 @@ enum {
     EDIT_PASTE,
     EDIT_UNDO,
     EDIT_REDO,
-    EDIT_SAVE
+    EDIT_SAVE,
+    EDIT_FIND,
+    EDIT_REPLACE,
+    EDIT_PREVIOUS_MATCH,
+    EDIT_REPLACE_ONE,
+    EDIT_REPLACE_ALL
 };
 static inline unsigned edit_shortcut(char letter) {
     if (letter >= 'A' && letter <= 'Z')
@@ -29,6 +34,9 @@ static inline unsigned edit_shortcut(char letter) {
            : letter == 'z' ? EDIT_UNDO
            : letter == 'y' ? EDIT_REDO
            : letter == 's' ? EDIT_SAVE
+           : letter == 'f' ? EDIT_FIND
+           : letter == 'h' ? EDIT_REPLACE
+           : letter == 'r' ? EDIT_REPLACE_ONE
                            : 0;
 }
 #endif

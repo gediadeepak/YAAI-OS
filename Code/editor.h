@@ -16,6 +16,8 @@ typedef struct {
 void editor_reset(Editor *e, const char *text, unsigned length);
 void editor_layout(Editor *e, unsigned columns, unsigned rows);
 int editor_key(Editor *e, unsigned key);
+void editor_select(Editor *e, unsigned first, unsigned end);
+int editor_replace_selection(Editor *e, const char *bytes, unsigned size);
 void editor_point(Editor *e, unsigned row, unsigned column, int extend);
 unsigned editor_line(const Editor *e, unsigned position);
 unsigned editor_column(const Editor *e, unsigned position);

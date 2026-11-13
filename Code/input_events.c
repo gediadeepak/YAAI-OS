@@ -66,7 +66,9 @@ static void character(unsigned code, int32_t value)
     unsigned navigation=code==105?EDIT_LEFT:code==106?EDIT_RIGHT:code==103?EDIT_UP:code==108?EDIT_DOWN:
         code==102?EDIT_HOME:code==107?EDIT_END:code==104?EDIT_PAGE_UP:code==109?EDIT_PAGE_DOWN:code==111?EDIT_DELETE:0;
     if(navigation)key=(char)(navigation+(shifts&&navigation<=EDIT_PAGE_DOWN?EDIT_SHIFT:0));
+    else if(controls && (code == 28 || code == 96)) key=(char)EDIT_REPLACE_ALL;
     else if(controls&&code<58)key=(char)edit_shortcut(normal[code]);
+    if (key == '\n' && shifts) key = (char)EDIT_PREVIOUS_MATCH;
     if(alts) {char action=desktop_shortcut(code,shifts);if(action)key=action;}
     unsigned next = (key_tail + 1) % CAPACITY;
     if (key && next != key_head) { keys[key_tail] = key; key_tail = next; }

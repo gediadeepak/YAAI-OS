@@ -2,6 +2,8 @@
 #define YAAI_FILE_APP_H
 #include "gui.h"
 void file_app_open(void);
+int file_app_tick(void);
+int file_app_recovery_pending(void);
 void file_app_draw(const BootInfo *canvas, GuiRect window);
 void file_app_click(GuiRect window, int x, int y);
 void file_app_pointer(GuiRect window, int x, int y, unsigned buttons);
