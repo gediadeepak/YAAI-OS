@@ -126,6 +126,14 @@ Folder conflicts offer Keep both or Cancel. Use Ctrl+X and Ctrl+V to move an
 item. If the destination name is taken, cancel and rename the source before retrying.
 A folder cannot be copied or moved into itself or its descendants.
 
+## Select multiple items in Files
+
+Ctrl+click toggles an item, Shift+click selects a range, and Ctrl+A selects the
+current folder's items. The status bar shows the selection count. Use the same
+Copy, Cut, Paste and Move to Trash actions for a selection. Batch paste skips
+destination name conflicts. The results dialog lists the outcome for each item.
+Use Prev and Next to page through the results, or use the arrow keys.
+
 ## Desktop applications
 
 Files, Notes, Calculator and Settings use a shared application registry, lifecycle callbacks,

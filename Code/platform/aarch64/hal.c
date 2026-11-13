@@ -67,6 +67,7 @@ int platform_input_initialize(unsigned width, unsigned height) { virtio_input_in
 int platform_serial_console_available(void) { return 0; }
 char platform_serial_console_read(void) { return 0; }
 int platform_key_pending(void) { virtio_input_poll(); return input_events_key_pending() || !(UART[6] & 0x10); }
+unsigned platform_key_modifiers(void) { return input_events_modifiers(); }
 char platform_key_read(void)
 {
     virtio_input_poll();

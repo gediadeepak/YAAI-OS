@@ -72,6 +72,7 @@ int platform_input_initialize(unsigned width, unsigned height)
     vbox_pointer_initialize(width,height); return keyboard_ready || vbox_pointer_available();
 }
 int platform_key_pending(void) { return ps2_keyboard_pending(); }
+unsigned platform_key_modifiers(void) { return keyboard_modifiers(); }
 char platform_key_read(void) { return keyboard_read(); }
 int platform_pointer_read(PlatformPointer *event)
 {

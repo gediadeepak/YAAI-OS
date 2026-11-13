@@ -20,6 +20,8 @@ int platform_clock_utc(DateTime *time);
 int platform_input_initialize(unsigned width, unsigned height);
 int platform_key_pending(void);
 char platform_key_read(void);
+enum { INPUT_CTRL = 1, INPUT_SHIFT = 2 };
+unsigned platform_key_modifiers(void);
 int platform_pointer_read(PlatformPointer *event);
 int platform_pointer_available(void);
 const char *platform_input_hint(void);

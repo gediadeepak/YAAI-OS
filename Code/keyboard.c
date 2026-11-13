@@ -5,6 +5,7 @@
 #include "desktop_keys.h"
 
 static uint8_t shifts, caps_lock, extended, pause_bytes, controls, alts;
+unsigned keyboard_modifiers(void) { return (controls ? 1u : 0u) | (shifts ? 2u : 0u); }
 
 int keyboard_initialize(void)
 {

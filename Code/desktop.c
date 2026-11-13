@@ -12,6 +12,7 @@
 #include "brand.h"
 #include "settings.h"
 #include "file_app.h"
+#include "file_browser.h"
 #include "power.h"
 #include "apps.h"
 #include "desktop_keys.h"
@@ -556,7 +557,8 @@ static void click(int x, int y)
             resizing = action == 11 ? id : 0;
             Rect window = *window_rect(id);
             drag_x = x - window.x; drag_y = y - window.y;
-        } else if (apps_find((unsigned)id)) apps_click((unsigned)id,*window_rect(id),x,y);
+        } else if (id == APP_FILES) file_browser_click_modified(*window_rect(id),x,y,platform_key_modifiers());
+        else if (apps_find((unsigned)id)) apps_click((unsigned)id,*window_rect(id),x,y);
         scene_dirty = 1;
         return;
     }

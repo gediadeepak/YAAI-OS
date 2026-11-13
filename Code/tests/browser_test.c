@@ -1,4 +1,5 @@
 #include "../apps.h"
+#include "../platform/platform.h"
 #include "../edit_keys.h"
 #include "../file_app.h"
 #include "../file_browser.h"
@@ -242,6 +243,29 @@ int browser_test(void) {
     CHECK(files_resolve("/work/work-copy-1", &pasted) == FILE_OK && pasted == copied_folder);
     CHECK(files_resolve("/work/work-copy-1/drafts/nested.txt", &pasted) == FILE_OK);
     CHECK(files_resolve("/work/drafts/nested.txt", &pasted) == FILE_OK);
+    CHECK(files_mkdir(work, "batch") == FILE_OK);
+    CHECK(files_write("/work/batch/binary.bin", "old", 3) == FILE_OK);
+    apps_key(APP_FILES, 'u');
+    // Select adjacent binary files, then toggle one twice.
+    file_browser_click_modified(w, 80, 298, 0);
+    file_browser_click_modified(w, 80, 334, INPUT_SHIFT);
+    file_browser_click_modified(w, 80, 334, INPUT_CTRL);
+    file_browser_click_modified(w, 80, 334, INPUT_CTRL);
+    apps_key(APP_FILES, (char)EDIT_COPY);
+    apps_click(APP_FILES, w, 80, 190);
+    apps_key(APP_FILES, '\n');
+    apps_key(APP_FILES, (char)EDIT_PASTE);
+    CHECK(equal(file_browser_status(), "1 completed, 1 need attention"));
+    CHECK(files_resolve("/work/batch/binary-copy-1.bin", &pasted) == FILE_OK);
+    size = sizeof(out);
+    CHECK(files_read("/work/batch/binary.bin", out, &size) == FILE_OK && size == 3 && out[0] == 'o');
+    apps_key(APP_FILES, '\n');
+    apps_key(APP_FILES, (char)EDIT_SELECT_ALL);
+    apps_key(APP_FILES, 't');
+    apps_key(APP_FILES, '\n');
+    CHECK(equal(file_browser_status(), "2 completed, 0 need attention"));
+    CHECK(files_resolve("/work/batch/binary.bin", &pasted) == FILE_NOT_FOUND);
+    CHECK(files_resolve("/work/batch/binary-copy-1.bin", &pasted) == FILE_NOT_FOUND);
     CHECK(apps_close(APP_FILES));
     files_mount(0);
     CHECK(apps_launch(APP_FILES));

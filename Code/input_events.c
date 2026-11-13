@@ -6,6 +6,7 @@ enum { CAPACITY = 128 };
 static char keys[CAPACITY];
 static PlatformPointer pointers[CAPACITY], pointer;
 static unsigned key_head, key_tail, pointer_head, pointer_tail, shifts, caps, controls, alts;
+unsigned input_events_modifiers(void) { return (controls ? 1u : 0u) | (shifts ? 2u : 0u); }
 static int width, height, changed, dropped;
 static int32_t axis_min[2], axis_max[2];
 

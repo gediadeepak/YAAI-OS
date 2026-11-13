@@ -3,6 +3,7 @@
 #include "edit_keys.h"
 #include "file_app.h"
 #include "gui.h"
+#include "platform/platform.h"
 #include "screen.h"
 #include "settings.h"
 #include "shell_ui.h"
@@ -23,7 +24,27 @@ static unsigned previous_buttons, clipboard_size, paste_target;
 static char clipboard_name[FILE_NAME];
 static uint8_t clipboard_data[FILE_BYTES];
 static FileEntry clipboard_root;
+static uint64_t extra_selection;
+static unsigned selection_anchor, batch_count, batch_revision;
+static FileEntry batch_items[FILE_COUNT];
+static unsigned batch_status[FILE_COUNT], report_count, report_page;
+static char batch_message[160];
+enum { BATCH_REPORT = 7, BATCH_TRASH = 8, REPORT_ROWS = 6 };
+
+static uint64_t selection_bit(unsigned id) { return id && id <= FILE_COUNT ? UINT64_C(1) << (id - 1) : 0; }
+static uint64_t selection(void) { return extra_selection | selection_bit(selected); }
+static unsigned selection_count(void) {
+    unsigned total = 0;
+    uint64_t bits = selection();
+    while (bits) {
+        bits &= bits - 1;
+        ++total;
+    }
+    return total;
+}
 static int clipboard_cut;
+static void append(char *to, const char *s);
+static void append_number(char *to, uint64_t n);
 static FileEntry tree_entries[FILE_COUNT];
 static unsigned tree_parent[FILE_COUNT], tree_created[FILE_COUNT];
 
@@ -92,6 +113,10 @@ static void refresh(void) {
             found = 1;
     if (!found)
         selected = 0;
+    uint64_t visible = 0;
+    for (unsigned i = 0; i < count; ++i)
+        visible |= selection_bit(entries[i].id);
+    extra_selection &= visible;
     seen_revision = apps_document_revision();
 }
 static void open_app(const AppServices *services) {
@@ -112,7 +137,8 @@ static void navigate(unsigned id, int in_trash, int inherited) {
     folder = id;
     trash = in_trash;
     trash_context = inherited;
-    page = selected = last_id = 0;
+    page = selected = last_id = selection_anchor = 0;
+    extra_selection = 0;
     context_open = dialog = 0;
     refresh();
     message = inherited ? "Trash contents are read-only; restore the folder first"
@@ -232,10 +258,10 @@ static FileResult find_child(unsigned parent, const char *name, unsigned *id) {
     return FILE_NOT_FOUND;
 }
 
-static FileResult copy_tree(unsigned destination, const char *name, int *partial) {
+static FileResult copy_tree(FileEntry root, unsigned destination, const char *name, int *partial) {
     unsigned total = 1;
     unsigned created = 0;
-    tree_entries[0] = clipboard_root;
+    tree_entries[0] = root;
     for (unsigned node = 0; node < total; ++node) {
         if (!(tree_entries[node].flags & FILE_DIRECTORY))
             continue;
@@ -294,7 +320,99 @@ static FileResult copy_tree(unsigned destination, const char *name, int *partial
     return result;
 }
 
+static unsigned capture_selection(void) {
+    unsigned total = 0;
+    uint64_t bits = selection();
+    for (unsigned i = 0; i < count; ++i)
+        if (bits & selection_bit(entries[i].id))
+            batch_items[total++] = entries[i];
+    return total;
+}
+
+static void run_batch(int to_trash) {
+    unsigned total = to_trash ? capture_selection() : batch_count;
+    if (!total || trash || trash_context)
+        return;
+    if (!to_trash && batch_revision != apps_document_revision()) {
+        message = "Files changed. Select and copy or cut the items again.";
+        return;
+    }
+    unsigned done = 0, retained = 0;
+    for (unsigned i = 0; i < total; ++i) {
+        FileEntry item = batch_items[i];
+        FileResult result = FILE_OK;
+        int partial = 0;
+        if ((to_trash || clipboard_cut) && file_app_in_use(item.id))
+            result = FILE_BAD_MOVE;
+        else if (to_trash)
+            result = fs->trash(item.id);
+        else if ((item.flags & FILE_DIRECTORY) && inside_source(folder, item.id))
+            result = FILE_BAD_MOVE;
+        else if (clipboard_cut && item.parent == folder)
+            result = FILE_EXISTS;
+        else {
+            unsigned existing;
+            result = find_child(folder, item.name, &existing);
+            if (result == FILE_OK)
+                result = FILE_EXISTS;
+            else if (result == FILE_NOT_FOUND) {
+                if (clipboard_cut)
+                    result = fs->move(item.id, folder);
+                else if (item.flags & FILE_DIRECTORY)
+                    result = copy_tree(item, folder, item.name, &partial);
+                else {
+                    unsigned size = sizeof(clipboard_data);
+                    result = fs->read_id(item.id, clipboard_data, &size);
+                    if (result == FILE_OK)
+                        result = fs->write_at(folder, item.name, clipboard_data, size);
+                }
+            }
+        }
+        batch_status[i] = partial ? FILE_CORRUPT + 100u : (unsigned)result;
+        if (result == FILE_OK)
+            ++done;
+    }
+    report_count = total;
+    report_page = 0;
+    if (done || !to_trash)
+        apps_documents_changed();
+    refresh();
+    selected = last_id = selection_anchor = 0;
+    extra_selection = 0;
+    batch_message[0] = 0;
+    append_number(batch_message, done);
+    append(batch_message, " completed, ");
+    append_number(batch_message, total - done);
+    append(batch_message, " need attention");
+    message = batch_message;
+    dialog = BATCH_REPORT;
+    if (to_trash) {
+        // This operation uses the same bounded item list as the batch clipboard.
+        batch_count = 0;
+    } else if (clipboard_cut) {
+        for (unsigned i = 0; i < total; ++i)
+            if (batch_status[i] != FILE_OK)
+                ++retained;
+        // Keep the results intact until dismissed. Re-cut failed items to retry.
+        batch_count = 0;
+        clipboard_name[0] = 0;
+        if (retained)
+            append(batch_message, ". Re-cut failed items to retry.");
+    } else {
+        batch_revision = apps_document_revision();
+    }
+}
+
 static void copy_document(int cut) {
+    if (selection_count() > 1 && !trash && !trash_context) {
+        batch_count = capture_selection();
+        batch_revision = apps_document_revision();
+        clipboard_cut = cut;
+        clipboard_name[0] = 0;
+        message = cut ? "Items cut. Open a folder and paste to move them."
+                      : "Items copied. Open a folder and paste.";
+        return;
+    }
     if (!selected || trash || trash_context) {
         message = "Select a document outside Trash to copy";
         return;
@@ -313,6 +431,7 @@ static void copy_document(int cut) {
             return;
         }
     }
+    batch_count = 0;
     copy(clipboard_name, entry.name, sizeof(clipboard_name));
     clipboard_root = entry;
     clipboard_cut = cut;
@@ -322,6 +441,10 @@ static void copy_document(int cut) {
 }
 
 static void paste_document(int choice) {
+    if (batch_count) {
+        run_batch(0);
+        return;
+    }
     if (!clipboard_name[0] || trash || trash_context) {
         message = "Copy a document and open a folder outside Trash";
         return;
@@ -413,7 +536,7 @@ static void paste_document(int choice) {
     if (clipboard_cut)
         result = fs->move(clipboard_root.id, folder);
     else if (directory)
-        result = copy_tree(folder, name, &partial);
+        result = copy_tree(clipboard_root, folder, name, &partial);
     else
         result = fs->write_at(folder, name, clipboard_data, clipboard_size);
     if (result != FILE_OK) {
@@ -449,6 +572,10 @@ static void command(char key) {
     }
     if ((unsigned char)key == EDIT_PASTE) {
         paste_document(0);
+        return;
+    }
+    if (selection_count() > 1 && (key == 'o' || key == 'm' || key == 'r' || key == 'p')) {
+        message = "Select one item for this action";
         return;
     }
     if (key == 'o') {
@@ -494,8 +621,12 @@ static void command(char key) {
         start_dialog(2);
     if (key == 'm')
         start_dialog(3);
-    if (key == 't')
-        start_dialog(4);
+    if (key == 't') {
+        if (selection_count() > 1 && !trash && !trash_context)
+            dialog = BATCH_TRASH;
+        else
+            start_dialog(4);
+    }
     if (key == 'p' && trash)
         start_dialog(5);
 }
@@ -642,7 +773,7 @@ static void draw(const BootInfo *s, GuiRect w) {
     for (unsigned i = 0; i < per && page * per + i < count; ++i) {
         FileEntry e = entries[page * per + i];
         int y = w.y + 181 + (int)i * 36;
-        if (e.id == selected)
+        if (selection() & selection_bit(e.id))
             gui_round_rect(screen, (GuiRect){w.x + 16, y, w.width - 32, 34}, 7, accent(), 255);
         icon(w.x + 25, y + 5, !!(e.flags & FILE_DIRECTORY));
         clipped(w.x + 62, y + 11, w.width - 306, e.name);
@@ -666,6 +797,10 @@ static void draw(const BootInfo *s, GuiRect w) {
     }
     FileUsage u;
     status_line[0] = 0;
+    if (selection_count()) {
+        append_number(status_line, selection_count());
+        append(status_line, " selected  |  ");
+    }
     if (fs->usage(&u) == FILE_OK) {
         unsigned limit = u.version == 1 ? 32 : FILE_COUNT;
         append_number(status_line, limit > u.entries ? limit - u.entries : 0);
@@ -711,6 +846,30 @@ static void draw(const BootInfo *s, GuiRect w) {
             button(paste_button(p, 2), "3 Cancel");
             return;
         }
+        if (dialog == BATCH_REPORT) {
+            clipped(p.x + 18, p.y + 15, p.width - 36, batch_message);
+            for (unsigned row = 0; row < REPORT_ROWS && report_page + row < report_count; ++row) {
+                unsigned i = report_page + row;
+                unsigned status = batch_status[i];
+                const char *result = status == FILE_OK ? "Done"
+                                     : status > 100    ? "Incomplete copy may remain"
+                                                       : files_error((FileResult)status);
+                clipped(p.x + 18, p.y + 43 + (int)row * 20, p.width / 2 - 25, batch_items[i].name);
+                clipped(p.x + p.width / 2, p.y + 43 + (int)row * 20, p.width / 2 - 18, result);
+            }
+            if (report_page)
+                button(paste_button(p, 0), "Prev");
+            if (report_page + REPORT_ROWS < report_count)
+                button(paste_button(p, 1), "Next");
+            button(paste_button(p, 2), "Close");
+            return;
+        }
+        if (dialog == BATCH_TRASH) {
+            text(p.x + 18, p.y + 20, "Move selected items to Trash?");
+            button(paste_button(p, 0), "Cancel");
+            button(paste_button(p, 1), "Move to Trash");
+            return;
+        }
         const char *titles[] = {
             "", "New folder", "Rename item", "Move to folder", "Move to Trash?", "Delete permanently?"};
         text(p.x + 18, p.y + 20, titles[dialog]);
@@ -729,7 +888,7 @@ static void draw(const BootInfo *s, GuiRect w) {
         button((GuiRect){p.x + p.width - 138, p.y + 170, 120, 32}, "Confirm");
     }
 }
-static void click(GuiRect w, int x, int y) {
+void file_browser_click_modified(GuiRect w, int x, int y, unsigned modifiers) {
     if (dialog) {
         GuiRect p = dialog_rect(w);
         if (dialog == PASTE_CONFLICT) {
@@ -739,6 +898,22 @@ static void click(GuiRect w, int x, int y) {
                 paste_document(2);
             else if (inside(paste_button(p, 2), x, y))
                 dialog = 0;
+            return;
+        }
+        if (dialog == BATCH_REPORT) {
+            if (inside(paste_button(p, 0), x, y) && report_page)
+                report_page -= REPORT_ROWS;
+            if (inside(paste_button(p, 1), x, y) && report_page + REPORT_ROWS < report_count)
+                report_page += REPORT_ROWS;
+            if (inside(paste_button(p, 2), x, y))
+                dialog = 0;
+            return;
+        }
+        if (dialog == BATCH_TRASH) {
+            if (inside(paste_button(p, 0), x, y))
+                dialog = 0;
+            if (inside(paste_button(p, 1), x, y))
+                run_batch(1);
             return;
         }
         if (inside(p, x, y) && y >= p.y + 170 && y < p.y + 202) {
@@ -810,7 +985,35 @@ static void click(GuiRect w, int x, int y) {
     if (index >= 0) {
         unsigned id = entries[index].id;
         uint64_t now = apps_ticks();
-        selected = id;
+        if (modifiers & INPUT_SHIFT) {
+            unsigned anchor = (unsigned)index;
+            for (unsigned i = 0; i < count; ++i)
+                if (entries[i].id == selection_anchor)
+                    anchor = i;
+            extra_selection = 0;
+            unsigned first = anchor < (unsigned)index ? anchor : (unsigned)index;
+            unsigned last = anchor > (unsigned)index ? anchor : (unsigned)index;
+            for (unsigned i = first; i <= last; ++i)
+                extra_selection |= selection_bit(entries[i].id);
+            selected = id;
+            last_id = 0;
+            return;
+        }
+        if (modifiers & INPUT_CTRL) {
+            extra_selection = selection() ^ selection_bit(id);
+            selected = (extra_selection & selection_bit(id)) ? id : 0;
+            if (!selected)
+                for (unsigned i = 0; i < count; ++i)
+                    if (extra_selection & selection_bit(entries[i].id)) {
+                        selected = entries[i].id;
+                        break;
+                    }
+            selection_anchor = id;
+            last_id = 0;
+            return;
+        }
+        extra_selection = 0;
+        selected = selection_anchor = id;
         if (id == last_id && now - last_click <= 20) {
             last_id = 0;
             activate(id);
@@ -819,13 +1022,21 @@ static void click(GuiRect w, int x, int y) {
             last_click = now;
         }
     } else {
-        selected = last_id = 0;
+        extra_selection = 0;
+        selected = last_id = selection_anchor = 0;
     }
 }
+static void click(GuiRect w, int x, int y) { file_browser_click_modified(w, x, y, 0); }
 static void pointer(GuiRect w, int x, int y, unsigned buttons) {
     if (!dialog && (buttons & 2) && !(previous_buttons & 2) && inside(w, x, y)) {
         int index = row_at(w, x, y);
-        selected = index >= 0 ? entries[index].id : 0;
+        if (index >= 0 && !(selection() & selection_bit(entries[index].id))) {
+            extra_selection = 0;
+            selected = selection_anchor = entries[index].id;
+        } else if (index < 0 && selection_count() <= 1) {
+            selected = 0;
+            extra_selection = 0;
+        }
         last_id = 0;
         int height = trash ? 76 : 300;
         context = (GuiRect){x, y, 206, height};
@@ -841,6 +1052,20 @@ static void pointer(GuiRect w, int x, int y, unsigned buttons) {
 }
 static void key(char k) {
     unsigned command_key = (unsigned char)k;
+    if (dialog == BATCH_REPORT) {
+        if (command_key == EDIT_LEFT && report_page)
+            report_page -= REPORT_ROWS;
+        if (command_key == EDIT_RIGHT && report_page + REPORT_ROWS < report_count)
+            report_page += REPORT_ROWS;
+        if (k == '\n')
+            dialog = 0;
+        return;
+    }
+    if (dialog == BATCH_TRASH) {
+        if (k == '\n')
+            run_batch(1);
+        return;
+    }
     if (dialog == PASTE_CONFLICT) {
         if (k == '1')
             paste_document(1);
@@ -890,8 +1115,18 @@ static void key(char k) {
             i = count ? count - 1 : 0;
         else if (i)
             --i;
-        if (i < count)
-            selected = entries[i].id;
+        if (i < count) {
+            extra_selection = 0;
+            selected = selection_anchor = entries[i].id;
+        }
+        return;
+    }
+    if (command_key == EDIT_SELECT_ALL) {
+        extra_selection = 0;
+        for (unsigned i = 0; i < count; ++i)
+            extra_selection |= selection_bit(entries[i].id);
+        selected = selection_anchor = count ? entries[0].id : 0;
+        last_id = 0;
         return;
     }
     if (k == 'u') {
