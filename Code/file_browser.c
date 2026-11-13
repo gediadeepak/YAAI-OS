@@ -22,6 +22,22 @@ enum { PASTE_CONFLICT = 6 };
 static unsigned previous_buttons, clipboard_size, paste_target;
 static char clipboard_name[FILE_NAME];
 static uint8_t clipboard_data[FILE_BYTES];
+static FileEntry clipboard_root;
+static int clipboard_cut;
+static FileEntry tree_entries[FILE_COUNT];
+static unsigned tree_parent[FILE_COUNT], tree_created[FILE_COUNT];
+
+static int inside_source(unsigned parent, unsigned source) {
+    for (unsigned depth = 0; parent && depth < FILE_COUNT; ++depth) {
+        if (parent == source)
+            return 1;
+        FileEntry entry;
+        if (fs->entry(parent, &entry) != FILE_OK)
+            return 1;
+        parent = entry.parent;
+    }
+    return parent != 0;
+}
 static const BootInfo *screen;
 static unsigned text_length(const char *s) {
     unsigned n = 0;
@@ -201,7 +217,84 @@ static const FileEntry *named_entry(const char *name) {
     return 0;
 }
 
-static void copy_document(void) {
+static FileResult find_child(unsigned parent, const char *name, unsigned *id) {
+    for (unsigned candidate = 1; candidate <= FILE_COUNT; ++candidate) {
+        FileEntry entry;
+        FileResult result = fs->entry(candidate, &entry);
+        if (result == FILE_IO_ERROR)
+            return result;
+        if (result == FILE_OK && !(entry.flags & FILE_TRASHED) && entry.parent == parent &&
+            equal(entry.name, name)) {
+            *id = candidate;
+            return FILE_OK;
+        }
+    }
+    return FILE_NOT_FOUND;
+}
+
+static FileResult copy_tree(unsigned destination, const char *name, int *partial) {
+    unsigned total = 1;
+    unsigned created = 0;
+    tree_entries[0] = clipboard_root;
+    for (unsigned node = 0; node < total; ++node) {
+        if (!(tree_entries[node].flags & FILE_DIRECTORY))
+            continue;
+        unsigned children = 0;
+        FileEntry children_list[FILE_COUNT];
+        FileResult result = fs->list(tree_entries[node].id, 0, children_list, FILE_COUNT, &children);
+        if (result != FILE_OK)
+            return result;
+        if (children > FILE_COUNT - total)
+            return FILE_CORRUPT;
+        for (unsigned child = 0; child < children; ++child) {
+            tree_parent[total] = node;
+            tree_entries[total++] = children_list[child];
+        }
+    }
+    FileUsage usage;
+    FileResult result = fs->usage(&usage);
+    if (result != FILE_OK)
+        return result;
+    unsigned capacity = usage.version == 1 ? 32 : FILE_COUNT;
+    if (total + usage.entries > capacity)
+        return FILE_FULL;
+
+    static uint8_t payload[FILE_BYTES];
+    for (unsigned node = 0; node < total; ++node) {
+        FileEntry *entry = &tree_entries[node];
+        unsigned parent = node ? tree_created[tree_parent[node]] : destination;
+        const char *child_name = node ? entry->name : name;
+        if (entry->flags & FILE_DIRECTORY) {
+            result = fs->mkdir(parent, child_name);
+        } else {
+            unsigned size = sizeof(payload);
+            result = fs->read_id(entry->id, payload, &size);
+            if (result == FILE_OK)
+                result = fs->write_at(parent, child_name, payload, size);
+        }
+        if (result != FILE_OK)
+            break;
+        result = find_child(parent, child_name, &tree_created[node]);
+        if (result != FILE_OK) {
+            *partial = 1;
+            break;
+        }
+        ++created;
+    }
+    if (result != FILE_OK && created) {
+        // Hide the incomplete tree first, then purge children before parents.
+        if (fs->trash(tree_created[0]) != FILE_OK) {
+            *partial = 1;
+        } else {
+            while (created)
+                if (fs->remove(tree_created[--created]) != FILE_OK)
+                    *partial = 1;
+        }
+    }
+    return result;
+}
+
+static void copy_document(int cut) {
     if (!selected || trash || trash_context) {
         message = "Select a document outside Trash to copy";
         return;
@@ -212,19 +305,20 @@ static void copy_document(void) {
         message = files_error(r);
         return;
     }
-    if (entry.flags & FILE_DIRECTORY) {
-        message = "Select a document to copy";
-        return;
-    }
     unsigned size = sizeof(clipboard_data);
-    r = fs->read_id(entry.id, clipboard_data, &size);
-    if (r != FILE_OK) {
-        message = files_error(r);
-        return;
+    if (!cut && !(entry.flags & FILE_DIRECTORY)) {
+        r = fs->read_id(entry.id, clipboard_data, &size);
+        if (r != FILE_OK) {
+            message = files_error(r);
+            return;
+        }
     }
     copy(clipboard_name, entry.name, sizeof(clipboard_name));
+    clipboard_root = entry;
+    clipboard_cut = cut;
     clipboard_size = size;
-    message = "Document copied. Open a folder and paste.";
+    message =
+        cut ? "Item cut. Open a folder and paste to move it." : "Item copied. Open a folder and paste.";
 }
 
 static void paste_document(int choice) {
@@ -235,13 +329,41 @@ static void paste_document(int choice) {
     refresh();
     if (storage_result != FILE_OK)
         return;
+    int directory = !!(clipboard_root.flags & FILE_DIRECTORY);
+    if (directory || clipboard_cut) {
+        FileEntry current;
+        if (fs->entry(clipboard_root.id, &current) != FILE_OK || current.flags != clipboard_root.flags ||
+            current.parent != clipboard_root.parent || !equal(current.name, clipboard_name) ||
+            inside_source(current.parent, current.id)) {
+            message = "The source changed. Select it and copy or cut again.";
+            dialog = 0;
+            return;
+        }
+        if (directory && inside_source(folder, current.id)) {
+            message = "A folder cannot be pasted inside itself";
+            return;
+        }
+        if (clipboard_cut && file_app_in_use(current.id)) {
+            message = "Close the open document before moving this item";
+            return;
+        }
+        if (clipboard_cut && folder == current.parent) {
+            clipboard_name[0] = 0;
+            dialog = 0;
+            message = "The item is already in this folder";
+            return;
+        }
+    }
     const FileEntry *existing = named_entry(clipboard_name);
     if (!choice && existing) {
         paste_target = existing->id;
         dialog = PASTE_CONFLICT;
-        message = "Choose how to handle the existing item";
+        message = clipboard_cut ? "Cancel and rename the source before moving"
+                                : "Choose how to handle the existing item";
         return;
     }
+    if (choice == 2 && (directory || clipboard_cut))
+        return;
     if (choice == 2) {
         if (!existing || existing->id != paste_target) {
             message = "The destination changed. Start the paste again.";
@@ -256,11 +378,13 @@ static void paste_document(int choice) {
 
     char name[FILE_NAME];
     copy(name, clipboard_name, sizeof(name));
+    if (choice == 1 && clipboard_cut)
+        return;
     if (choice == 1) {
         unsigned length = text_length(clipboard_name);
         unsigned extension = length;
         for (unsigned i = 1; i < length; ++i)
-            if (clipboard_name[i] == '.')
+            if (!directory && clipboard_name[i] == '.')
                 extension = i;
         // Leave room for the suffix and preserve short file extensions.
         unsigned extension_length = length - extension;
@@ -284,9 +408,21 @@ static void paste_document(int choice) {
                 break;
         }
     }
-    FileResult result = fs->write_at(folder, name, clipboard_data, clipboard_size);
+    int partial = 0;
+    FileResult result;
+    if (clipboard_cut)
+        result = fs->move(clipboard_root.id, folder);
+    else if (directory)
+        result = copy_tree(folder, name, &partial);
+    else
+        result = fs->write_at(folder, name, clipboard_data, clipboard_size);
     if (result != FILE_OK) {
-        message = files_error(result);
+        if (partial) {
+            apps_documents_changed();
+            refresh();
+            dialog = 0;
+        }
+        message = partial ? "Copy failed. An incomplete copy may remain." : files_error(result);
         return;
     }
     dialog = 0;
@@ -296,13 +432,19 @@ static void paste_document(int choice) {
     const FileEntry *pasted = named_entry(name);
     if (pasted)
         selected = pasted->id;
-    message = "Document pasted";
+    message = clipboard_cut ? "Item moved" : "Item pasted";
+    if (clipboard_cut)
+        clipboard_name[0] = 0;
 }
 
 static void command(char key) {
     context_open = 0;
     if ((unsigned char)key == EDIT_COPY) {
-        copy_document();
+        copy_document(0);
+        return;
+    }
+    if ((unsigned char)key == EDIT_CUT) {
+        copy_document(1);
         return;
     }
     if ((unsigned char)key == EDIT_PASTE) {
@@ -542,11 +684,12 @@ static void draw(const BootInfo *s, GuiRect w) {
     button((GuiRect){w.x + w.width - 96, w.y + w.height - 78, 68, 30}, "Next");
     clipped(w.x + 18, w.y + w.height - 30, w.width - 36, message);
     if (context_open) {
-        unsigned n = trash ? 2 : 8;
+        unsigned n = trash ? 2 : 9;
         gui_shadow(screen, context, 10);
         gui_round_rect(screen, context, 10, shell_palette(screen).surface, 255);
-        const char *normal[] = {"Open",       "Rename",   "Move to folder", "Move to Trash",
-                                "New folder", "New note", "Copy",           "Paste"};
+        const char *normal[] = {"Open",          "Rename",     "Move to folder",
+                                "Move to Trash", "New folder", "New note",
+                                "Copy",          "Paste",      "Cut"};
         const char *deleted[] = {"Restore", "Delete permanently"};
         for (unsigned i = 0; i < n; ++i)
             text(context.x + 14, context.y + 12 + (int)i * 32, trash ? deleted[i] : normal[i]);
@@ -561,8 +704,10 @@ static void draw(const BootInfo *s, GuiRect w) {
             text(p.x + 18, p.y + 20, "An item already has this name");
             clipped(p.x + 18, p.y + 53, p.width - 36, clipboard_name);
             clipped(p.x + 18, p.y + 135, p.width - 36, message);
-            button(paste_button(p, 0), "1 Keep both");
-            button(paste_button(p, 1), "2 Replace");
+            if (!clipboard_cut)
+                button(paste_button(p, 0), "1 Keep both");
+            if (!clipboard_cut && !(clipboard_root.flags & FILE_DIRECTORY))
+                button(paste_button(p, 1), "2 Replace");
             button(paste_button(p, 2), "3 Cancel");
             return;
         }
@@ -608,9 +753,11 @@ static void click(GuiRect w, int x, int y) {
         if (inside(context, x, y)) {
             unsigned i = (unsigned)(y - context.y - 6) / 32;
             const char *keys = trash ? "rp" : "ormtnf";
-            if (y >= context.y + 6 && i < (trash ? 2u : 8u)) {
+            if (y >= context.y + 6 && i < (trash ? 2u : 9u)) {
                 if (!trash && i == 6)
                     command((char)EDIT_COPY);
+                else if (!trash && i == 8)
+                    command((char)EDIT_CUT);
                 else if (!trash && i == 7)
                     command((char)EDIT_PASTE);
                 else
@@ -680,7 +827,7 @@ static void pointer(GuiRect w, int x, int y, unsigned buttons) {
         int index = row_at(w, x, y);
         selected = index >= 0 ? entries[index].id : 0;
         last_id = 0;
-        int height = trash ? 76 : 268;
+        int height = trash ? 76 : 300;
         context = (GuiRect){x, y, 206, height};
         if (context.x + 206 > w.x + w.width - 12)
             context.x = w.x + w.width - 218;

@@ -121,7 +121,10 @@ If a name is already in use, choose **1 Keep both**, **2 Replace**, or
 **3 Cancel**. Escape also cancels. Keep both picks a free name such as
 `report-copy-1.txt`. Replace requires an existing document that is closed in
 Notes. Paste writes through the native filesystem and its normal commit path.
-This version copies individual documents.
+Folder copy includes nested folders and checks free file slots before starting.
+Folder conflicts offer Keep both or Cancel. Use Ctrl+X and Ctrl+V to move an
+item. If the destination name is taken, cancel and rename the source before retrying.
+A folder cannot be copied or moved into itself or its descendants.
 
 ## Desktop applications
 
